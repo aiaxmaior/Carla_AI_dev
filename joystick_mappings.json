@@ -1,0 +1,69 @@
+{
+    "STEERING": {
+        "type": "axis_steer",
+        "joy_idx": 0,
+        "id": 0,
+        "raw_calibrated_min": -0.9970091860713522,
+        "raw_calibrated_max": 0.9970702230903042,
+        "raw_calibrated_center": 0.003173828125
+    },
+    "THROTTLE": {
+        "type": "axis_pedal",
+        "joy_idx": 0,
+        "id": 2,
+        "raw_released_val": -1.0,
+        "raw_pressed_val": 0.999176025390625
+    },
+    "BRAKE": {
+        "type": "axis_pedal",
+        "joy_idx": 0,
+        "id": 5,
+        "raw_released_val": -0.999969482421875,
+        "raw_pressed_val": 0.701995849609375
+    },
+    "REVERSE": {
+        "type": "button",
+        "joy_idx": 0,
+        "id": 33
+    },
+    "HANDBRAKE": {
+        "type": "button",
+        "joy_idx": 0,
+        "id": 20
+    },
+    "TOGGLE_MANUAL_GEAR": {
+        "type": "button",
+        "joy_idx": 0,
+        "id": 18
+    },
+    "GEAR_UP": {
+        "type": "button",
+        "joy_idx": 0,
+        "id": 47
+    },
+    "GEAR_DOWN": {
+        "type": "button",
+        "joy_idx": 0,
+        "id": 46
+    },
+    "TOGGLE_VIEW": {
+        "type": "button",
+        "joy_idx": 0,
+        "id": 31
+    },
+    "BLINKER_LEFT": {
+        "type": "button",
+        "joy_idx": 0,
+        "id": 21
+    },
+    "BLINKER_RIGHT": {
+        "type": "button",
+        "joy_idx": 0,
+        "id": 34
+    },
+    "HAZARD": {
+        "type": "button",
+        "joy_idx": 0,
+        "id": 24
+    }
+}
