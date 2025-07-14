@@ -330,9 +330,13 @@ class MVDFeatureExtractor:
         """Returns a dictionary of all MVD scores and indices for logging."""
         indices = self.get_standardized_indices()
         return {
-            "score_collision_raw": self._collision_avoidance_score,
-            "score_lane_raw": self._lane_management_score,
-            "score_harsh_driving_raw": self._harsh_driving_score,
+            "overall_score": self.get_overall_mvd_score(),
+            "spacer_0": None,
             "index_mbi_0_1": indices.get("mbi_0_1"),
+            "score_collision_raw": self._collision_avoidance_score,
+            "score_harsh_driving_raw": self._harsh_driving_score,
+            "spacer_1": None,
             "index_lmi_0_1": indices.get("lmi_0_1"),
+            "score_lane_raw": self._lane_management_score,
+            "spacer_2": None,
         }

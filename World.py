@@ -1,3 +1,4 @@
+
 import carla
 import random
 import time
@@ -6,7 +7,8 @@ import Sensors
 import TrafficManager
 import HUD
 import re
-
+import weakref
+import math
 
 def get_actor_display_name(actor, truncate=250):
     """Helper function to get display name of a CARLA actor."""
@@ -54,6 +56,11 @@ class World(object):
         self.controller = None
         self.lane_manager = None
 
+        # --- Collision modification for FusoRosa
+        self.collision_probes = [] # List to hold our new sensors
+        self.collision_data = {"collided": False, "actor_type": None, "intensity": 0.0}
+        # -----------------------
+
         self.player = None
         self.collision_sensor_instance = None
         self.lane_invasion_sensor_instance = None
@@ -100,30 +107,73 @@ class World(object):
 
         self.world.on_tick(self.hud.on_world_tick)
 
+    def _on_collision_event(self, event):
+        """
+        Callback for all collision probes. Updates a shared collision state
+        and FORCES a HUD notification.
+        """
+        logging.info("collision event triggered")
+        self.collision_data["collided"] = True
+        self.collision_data["actor_type"] = event.other_actor.type_id if event.other_actor else "unknown"
+        impulse = event.normal_impulse
+        self.collision_data["intensity"] = math.sqrt(impulse.x**2 + impulse.y**2 + impulse.z**2)
+        
+        # --- FIX: Call the notification method directly ---
+        # This bypasses the EventManager's cooldown for the initial impact,
+        # ensuring the critical alert always shows up immediately.
+        self.hud.notification("COLLISION!", seconds=3.0, text_color=(255,0,0), is_critical_center=True)
+        self.hud.play_sound_for_event('collision', force_play=True)
+
+
+    def get_collision_data_and_reset(self):
+        """NEW: Public method for Main.py to get collision data."""
+        data = self.collision_data.copy()
+        self.collision_data = {"collided": False, "actor_type": None, "intensity": 0.0}
+        return data
+
     def apply_advanced_vehicle_parameters(self):
         logging.info("Applying custom physics for a 15-Passenger Sprinter van...")
         physics_control = self.player.get_physics_control()
-        physics_control.mass = 3000.0
-        physics_control.center_of_mass.z = -1
+        physics_control.mass = 5500.0
+        physics_control.center_of_mass.z = -1.2
+        physics_control.center_of_mass.x = -0.5
         physics_control.torque_curve = [
-            carla.Vector2D(x=0, y=150),
-            carla.Vector2D(x=1000, y=170),
-            carla.Vector2D(x=1500, y=225),
+            carla.Vector2D(x=0, y=300),
+            carla.Vector2D(x=1000, y=310),
+            carla.Vector2D(x=1500, y=360),
             carla.Vector2D(x=2000, y=250),
             carla.Vector2D(x=2500, y=258),
             carla.Vector2D(x=3500, y=258),
             carla.Vector2D(x=4000, y=235),
             carla.Vector2D(x=4500, y=210),
         ]
-        physics_control.max_rpm = 4500.0
+        physics_control.max_rpm = 3400.0
         for wheel in physics_control.wheels:
             wheel.lateral_stiffness = 15.0
             wheel.friction = 2.0
-        physics_control.wheels[0].max_steer_angle = 18
-        physics_control.wheels[1].max_steer_angle = 18.0
-        physics_control.drag_coefficient = 0.60
+        physics_control.wheels[0].max_steer_angle = 20
+        physics_control.wheels[1].max_steer_angle = 20
+        physics_control.drag_coefficient = 0.32
         self.player.apply_physics_control(physics_control)
         logging.info("Custom physics for 15-Passenger Sprinter have been applied.")
+
+    def destroy_player_and_sensors(self):
+        """Destroys the player vehicle and all its attached sensors."""
+        # --- ADD THIS BLOCK to destroy the new probes ---
+        for probe in self.collision_probes:
+            if probe and probe.is_alive:
+                probe.stop()
+                probe.destroy()
+        self.collision_probes.clear()
+        # -----------------------------------------------
+
+        # Modify the old list to remove the collision sensor instance
+        sensors_to_destroy = [
+            # self.collision_sensor_instance, <-- Remove this
+            self.lane_invasion_sensor_instance,
+            self.gnss_sensor_instance,
+        ]
+        # ... rest of the method continues
 
     def restart(self):
         """
@@ -137,7 +187,12 @@ class World(object):
             else 0
         )
 
-        blueprint = self.world.get_blueprint_library().find("vehicle.mercedes.sprinter")
+        #blueprint = self.world.get_blueprint_library().find("vehicle.mitsubishi.fusorosa")
+        
+        if self._actor_filter != "vehicle.mercedes.sprinter":
+            blueprint = self.world.get_blueprint_library().find(self._actor_filter)
+        else:
+            blueprint = self.world.get_blueprint_library().find("vehicle.mercedes.sprinter")
         blueprint.set_attribute("role_name", "hero")
 
         if blueprint.has_attribute("color"):
@@ -153,7 +208,7 @@ class World(object):
             self.player = self.world.try_spawn_actor(blueprint, spawn_point)
             if self.player:
                 spawn_point = self.player.get_transform()
-                spawn_point.location.z += 1.5
+                spawn_point.location.z += 2.0
                 spawn_point.rotation.roll = 0.0
                 spawn_point.rotation.pitch = 0.0
                 self.player.set_transform(spawn_point)
@@ -183,7 +238,46 @@ class World(object):
         self.hud.reset()
 
         # --- SENSOR INITIALIZATION (Corrected Order) ---
-        self.collision_sensor_instance = Sensors.CollisionSensor(self.player, self.hud)
+        #self.collision_sensor_instance = Sensors.CollisionSensor(self.player, self.hud)
+        # --- REVISED: Create a high-density 16-point Physical Collision Cage ---
+        bounding_box = self.player.bounding_box
+        extent = bounding_box.extent
+        
+        # Define a buffer multiplier to extend the cage slightly beyond the vehicle
+        buffer_multiplier = 2 
+
+        # Define 16 points for a full high-density perimeter cage
+        # We use numpy for easier calculations
+        import numpy as np
+        
+        x = extent.x * buffer_multiplier
+        y = extent.y * buffer_multiplier
+        z = extent.z * 0.25 # Place probes at a reasonable height
+
+        # Create points along each edge (front, back, left, right)
+        front_edge = [carla.Location(x=x, y=val) for val in np.linspace(-y, y, 5)] # 5 points from left to right corner
+        back_edge = [carla.Location(x=-x, y=val) for val in np.linspace(-y, y, 5)]
+        left_edge = [carla.Location(x=val, y=-y) for val in np.linspace(-x, x, 5)]
+        right_edge = [carla.Location(x=val, y=y) for val in np.linspace(-x, x, 5)]
+
+        # Combine the lists and remove duplicates (corners are in multiple lists)
+        # Using a set of tuples to find unique points, then converting back to Locations
+        all_points = front_edge + back_edge + left_edge + right_edge
+        unique_points_tuples = set((p.x, p.y) for p in all_points)
+        
+        # Final list of locations for the sensors, with z-coordinate
+        perimeter_locations = [carla.Location(px, py, z) for px, py in unique_points_tuples]
+
+
+        collision_bp = self.world.get_blueprint_library().find("sensor.other.collision")
+        for location in perimeter_locations:
+            transform = carla.Transform(location)
+            probe = self.world.spawn_actor(collision_bp, transform, attach_to=self.player)
+            
+            weak_self = weakref.ref(self)
+            probe.listen(lambda event: weak_self()._on_collision_event(event))
+            self.collision_probes.append(probe)
+        logging.info(f"Spawned collision cage with {len(self.collision_probes)} probes.")
 
         # Create the LaneManagement system first, as it's needed by the LaneInvasionSensor
         self.lane_manager = Sensors.LaneManagement(
@@ -208,7 +302,7 @@ class World(object):
             self.is_reset = True
 
         self.camera_manager.transform_index = cam_pos_index
-        self.camera_manager.set_sensor(cam_index, notify=False)
+#        self.camera_manager.set_sensor(cam_index, notify=False)
 
         actor_type = get_actor_display_name(self.player)
 

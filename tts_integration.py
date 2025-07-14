@@ -1,4 +1,19 @@
-# main.py
+"""
+
+PLACEHOLDER DOCUMENT, FOR NOW, WITH SOME POSSIBLE RELEVANT CODE.
+
+
+"""
+
+
+
+
+
+
+
+
+
+
 import json
 import requests
 import time

@@ -68,6 +68,8 @@ class DualControl(object):
         self._is_resetting = False
         self._blinker_state = 0
         self._idling_nobrake = None
+        self._collision_lockout_active = False
+        self._park_engaged = False
         self.data_log = {}
 
         # CARLA control objects
@@ -214,6 +216,13 @@ class DualControl(object):
             self.world.hud.notification("Press 'H' or '?' for help.", seconds=4.0)
         else:
             logging.error("DualControl.finalize_setup(): world.player not available.")
+
+    def register_collision(self):
+        """Called from Main.py to engage the post-collision lockout."""
+        if not self._collision_lockout_active:
+            self._collision_lockout_active = True
+            self._control.hand_brake = True
+            self.world.hud.warning_manager.add_warning("handbrake", "HANDBRAKE ON")
 
     def _apply_loaded_mappings(self):
         """Applies loaded or configured joystick mappings to internal attributes."""
@@ -437,9 +446,17 @@ class DualControl(object):
                     self._command_queue.append(
                         {"type": "button", "action": "toggle_reverse"}
                     )
+                if event.key == K_p:
+                    self._command_queue.append(
+                        {"type": "button", "action": "toggle_park"}
+                    )
                 if event.key == K_m:
                     self._command_queue.append(
                         {"type": "button", "action": "toggle_manual"}
+                    )
+                if event.key == K_SPACE:
+                    self._command_queue.append(
+                        {"type": "button", "action": "toggle_handbrake"}
                     )
                 if event.key == K_COMMA:
                     self._command_queue.append(
@@ -451,17 +468,22 @@ class DualControl(object):
                     self._command_queue.append(
                         {"type": "button", "action": "toggle_autopilot"}
                     )
-                if event.key == K_z:
-                    self._command_queue.append(
-                        {"type": "button", "action": "activate_left_blinker"}
-                    )
                 if event.key == K_x:
                     self._command_queue.append(
                         {"type": "button", "action": "activate_right_blinker"}
                     )
-                if event.key == K_h:
+                if event.key == K_z and not (pygame.key.get_mods() & KMOD_SHIFT):
+                    self._command_queue.append(
+                        {"type": "button", "action": "activate_left_blinker"}
+                    )
+
+                if event.key == K_z and (pygame.key.get_mods() & KMOD_SHIFT):
                     self._command_queue.append(
                         {"type": "button", "action": "toggle_hazard"}
+                    )
+                if event.key == K_h:
+                    self._command_queue.append(
+                        {"type": "button", "action": "toggle_help"}
                     )
                 if event.key == K_TAB:
                     self._command_queue.append(
@@ -512,8 +534,19 @@ class DualControl(object):
                     self._blinker_state = 0 if self._blinker_state == 3 else 3
                 elif action == "toggle_reverse":
                     self._control.reverse = not self._control.reverse
+                elif action == 'toggle_park':
+                    self._park_engaged = not self._park_engaged
                 elif action == "toggle_handbrake":
+                    # First, toggle the actual control state
                     self._control.hand_brake = not self._control.hand_brake
+                    # Now, update the persistent warning based on the new state
+                    if self._control.hand_brake:
+                        self.world.hud.warning_manager.add_warning(
+                            "handbrake", "HANDBRAKE ON"
+                        )
+                    else:
+                        self.world.hud.warning_manager.remove_warning("handbrake")
+
                 elif action == "toggle_autopilot":
                     self._autopilot_enabled = not self._autopilot_enabled
                     player_carla_actor.set_autopilot(self._autopilot_enabled)
@@ -535,6 +568,12 @@ class DualControl(object):
                         if self._control.manual_gear_shift
                         else 0
                     )
+                    if self._control.manual_gear_shift:
+                        self.world.hud.warning_manager.add_warning(
+                            "manual_mode", "MANUAL TRANSMISSION"
+                        )
+                    else:
+                        self.world.hud.warning_manager.remove_warning("manual_mode")
                 elif self._control.manual_gear_shift:
                     if action == "gear_up":
                         self._control.gear += 1
@@ -542,6 +581,9 @@ class DualControl(object):
                         self._control.gear = max(
                             -1, player_carla_actor.get_control().gear - 1
                         )
+                elif action == "toggle_help":
+                    if self.world and self.world.hud and self.world.hud.help:
+                        self.world.hud.help.toggle()
 
         self._apply_lights_to_vehicle(player_carla_actor)
         if self._autopilot_enabled:
@@ -562,43 +604,75 @@ class DualControl(object):
             self._control.steer = max(-1.0, min(1.0, self._current_steer))
             player_carla_actor.apply_control(self._control)
         else:
+            # Define vehicle physics parameters
             max_accel, max_brake_decel, max_jerk, max_speed_ms = 3.5, 8.0, 10.0, 40.23
             self._ackermann_control.steer = max(-1.0, min(1.0, self._current_steer))
             self._ackermann_control.jerk = max_jerk
 
+            # === Main Control Logic: Pedals / Idle / Coasting ===
             if self._current_brake > 0.05:
+                # If lockout is active, pressing the brake clears all lockout states.
+                if self._collision_lockout_active:
+                    self._collision_lockout_active = False
+                    self._control.hand_brake = False
+                    self.world.hud.warning_manager.remove_warning("handbrake")
+
                 self._idling_nobrake = False
                 self._ackermann_control.speed = 0.0
                 self._ackermann_control.acceleration = (
                     self._current_brake * max_brake_decel
                 )
             elif self._current_throttle > 0.05:
+                # If lockout is active, pressing the throttle clears all lockout states.
+                if self._collision_lockout_active:
+                    self._collision_lockout_active = False
+                    self._control.hand_brake = False
+                    self.world.hud.warning_manager.remove_warning("handbrake")
+
                 self._idling_nobrake = False
                 self._ackermann_control.speed = max_speed_ms
                 self._ackermann_control.acceleration = (
                     self._current_throttle * max_accel
                 )
             else:
+                # This block handles three states: idle creep, high-speed coasting, and post-collision stop.
                 self._idling_nobrake = False
                 current_speed_ms = player_carla_actor.get_velocity().length()
-                if current_speed_ms < 2.0 and not self._control.hand_brake:
+
+                # Condition for normal, slow-speed idle creep
+                if (
+                    current_speed_ms < 2.0
+                    and not self._control.hand_brake
+                    and not self._collision_lockout_active
+                ):
                     self._idling_nobrake = True
-                    self._ackermann_control.speed = (
-                        -2.5 if self._control.reverse else 2.5
-                    )
-                    self._ackermann_control.acceleration = (
-                        -0.5 if self._control.reverse else 0.5
-                    )
+                    self._ackermann_control.speed = 2.5
+                    self._ackermann_control.acceleration = 0.5
                 else:
-                    self._ackermann_control.speed = current_speed_ms
+                    # This block handles both high-speed coasting and the post-collision stop.
+                    if self._collision_lockout_active:
+                        # If locked out after a collision, command a hard stop.
+                        self._ackermann_control.speed = 0.0
+                    else:
+                        # Otherwise, allow the car to coast at its current speed.
+                        self._ackermann_control.speed = current_speed_ms
+
                     self._ackermann_control.acceleration = 0.0
 
+            # === Final Overrides: Handbrake and Reverse ===
+            if self._park_engaged:
+                self._ackermann_control.speed = 0.0
+                self._ackermann_control.acceleration = max_brake_decel
+                self._idling_nobrake = False
+            
             if self._control.hand_brake:
                 self._ackermann_control.speed = 0.0
-                self._ackermann_control.acceleration = max_accel
+                # Corrected: Use braking deceleration when handbrake is on.
+                self._ackermann_control.acceleration = max_brake_decel
                 self._idling_nobrake = False
 
             if self._control.reverse:
+                # Apply reverse direction to the determined target speed.
                 self._ackermann_control.speed *= -1.0
 
             player_carla_actor.apply_ackermann_control(self._ackermann_control)
@@ -666,23 +740,10 @@ class DualControl(object):
         sign = 1 if norm_steer > 0 else -1
         effective_range = 1.0 - props.get("deadzone", 0.05)
         scaled_input = (abs(norm_steer) - props.get("deadzone", 0.05)) / effective_range
-        return sign * math.pow(scaled_input, props.get("linearity", 0.9))
-
-    def _parse_walker_keys(self, keys, milliseconds):
-        # Unchanged from original
-        if not isinstance(self._control, carla.WalkerControl):
-            return
-        self._control.speed = 0.0
-        if keys[K_DOWN] or keys[K_s]:
-            self._control.speed = 0.0
-        if keys[K_LEFT] or keys[K_a]:
-            self._control.speed = 0.01
-            self._rotation.yaw -= 0.08 * milliseconds
-        if keys[K_RIGHT] or keys[K_d]:
-            self._control.speed = 0.01
-            self._rotation.yaw += 0.08 * milliseconds
-        if keys[K_UP] or keys[K_w]:
-            self._control.speed = 5.556 if pygame.key.get_mods() & KMOD_SHIFT else 2.778
-        self._control.jump = keys[K_SPACE]
-        self._rotation.yaw = round(self._rotation.yaw, 1)
-        self._control.direction = self._rotation.get_forward_vector()
+        final_steer = sign * math.pow(scaled_input, props.get("linearity", 0.9))
+        if self.args.invert_steer:
+            return final_steer * -1.0
+        return final_steer
+    
+    def is_parked(self):
+        return self._park_engaged
