@@ -1,12 +1,15 @@
 """
+Project: Q-DRIVE
+
+## About:
 CARLA Manual Control Client with Modular Design.
 Integrates custom controls, HUD, sensors, and MVD scoring.
 Supports dynamic joystick mapping and CARLA server launch.
 
-Subject: CARLA, Fanatec-Csl~series Integration
+
 Author: CARLA-dev, Arjun Joshi (HBSS)
-Recent Date: 07.03.2025
-Versioning: v0.2.4 : Restored comprehensive per-frame session logging.
+Recent Date: 08.04.2025
+Versioning: v0.3.0
 """
 
 import argparse
@@ -19,12 +22,18 @@ import json
 import carla
 import sys_task
 import math
+import re
+import Sensors
+import DataIngestion
+import pandas as pd
 
+from TitleScreen import TitleScreen
+from DynamicMonitor import DynamicMonitor
+from VehicleLibrary import VehicleLibrary
 from World import World
 from HUD import HUD, EndScreen
 from controls_queue import DualControl
 from MVD import MVDFeatureExtractor
-import Sensors
 
 try:
     import pygame
@@ -34,104 +43,11 @@ except ImportError:
 
 # Global variable to hold the CARLA server process if we launch it
 carla_server_process = None
+
+
 # ==============================================================================
 # -- Title Screen Function -----------------------------------------------------
 # ==============================================================================
-
-
-def show_title_screen(display, args):
-    """
-    Displays a title/loading screen before the main simulation starts.
-    """
-    # This function remains unchanged.
-    logo_img = None
-    try:
-        logo_surface = pygame.image.load("./images/logo-qryde.png").convert_alpha()
-        original_size = logo_surface.get_size()
-        scaled_size = (int(original_size[0] * 0.3), int(original_size[1] * 0.3))
-        logo_img = pygame.transform.smoothscale(logo_surface, scaled_size)
-    except pygame.error as e:
-        logging.warning(f"Could not load logo image for title screen: {e}")
-
-    font_path = os.path.join(
-        args.carla_root,
-        "CarlaUE4",
-        "Content",
-        "Carla",
-        "Fonts",
-        "tt-supermolot-neue-trl.bd-it.ttf",
-    )
-    try:
-        font_title = pygame.font.Font(font_path, 64)
-        font_subtitle = pygame.font.Font(font_path, 32)
-        font_credits = pygame.font.Font(font_path, 22)
-        font_prompt = pygame.font.Font(font_path, 60)
-    except pygame.error:
-        logging.warning("Custom title font not found, falling back to default.")
-        font_title = pygame.font.Font(None, 80)
-        font_subtitle = pygame.font.Font(None, 40)
-        font_credits = pygame.font.Font(None, 28)
-        font_prompt = pygame.font.Font(None, 60)
-
-    top_color, bottom_color = (44, 62, 80), (27, 38, 49)
-    title_color, subtitle_color, prompt_color = (
-        (169, 204, 227),
-        (189, 195, 199),
-        (169, 204, 227),
-    )
-    main_screen_offset_x = display.get_width() // 2
-    single_screen_width = display.get_width() // 2
-    center_x = main_screen_offset_x + (single_screen_width / 2)
-
-    title_surf = font_title.render(
-        "Q-Ryde Driving Behavior Simulator", True, title_color
-    )
-    subtitle_surf = font_subtitle.render(
-        "Powered by HBSS Technologies AI", True, subtitle_color
-    )
-    author_surf = font_credits.render("Author: Arjun Joshi", True, (150, 150, 150))
-    prompt_surf = font_prompt.render(
-        "Press ENTER to Begin or ESC to Exit", True, prompt_color
-    )
-
-    wait_for_key = True
-    while wait_for_key:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT or (
-                event.type == pygame.KEYDOWN and event.key == K_ESCAPE
-            ):
-                pygame.quit()
-                sys.exit()
-            if event.type == pygame.KEYDOWN and event.key in [K_RETURN, K_KP_ENTER]:
-                wait_for_key = False
-
-        screen_height = display.get_height()
-        for y in range(screen_height):
-            r = top_color[0] + (bottom_color[0] - top_color[0]) * y // screen_height
-            g = top_color[1] + (bottom_color[1] - top_color[1]) * y // screen_height
-            b = top_color[2] + (bottom_color[2] - top_color[2]) * y // screen_height
-            pygame.draw.line(display, (r, g, b), (0, y), (display.get_width(), y))
-
-        if logo_img:
-            logo_rect = logo_img.get_rect(center=(center_x, display.get_height() * 0.3))
-            display.blit(logo_img, logo_rect)
-
-        # Blit text, centered on the main screen
-        title_rect = title_surf.get_rect(center=(center_x, display.get_height() * 0.55))
-        subtitle_rect = subtitle_surf.get_rect(center=(center_x, title_rect.bottom + 20))
-        author_rect = author_surf.get_rect(center=(center_x, subtitle_rect.bottom + 15))
-        
-        if (pygame.time.get_ticks() // 1000) % 2 == 0:
-            prompt_rect = prompt_surf.get_rect(center=(center_x, display.get_height() * 0.85))
-            display.blit(prompt_surf, prompt_rect)
-
-
-        display.blit(title_surf, title_rect)
-        display.blit(subtitle_surf, subtitle_rect)
-        display.blit(author_surf, author_rect)
-
-        pygame.display.flip()
-        pygame.time.wait(30)
 
 
 def game_loop(args, client, joystick_mappings=None):
@@ -139,6 +55,7 @@ def game_loop(args, client, joystick_mappings=None):
     Main simulation loop. Handles a single session from start to end.
     """
     logging.info("GAME LOOP: Initializing new session.")
+    # Yeah,
     os.environ["SDL_VIDEO_MINIMIZE_ON_FOCUS_LOSS"] = "0"
 
     pygame.font.init()
@@ -149,9 +66,32 @@ def game_loop(args, client, joystick_mappings=None):
     carla_world = None
 
     try:
-        logging.info(f"Loading map: {args.map}")
-        carla_world = client.load_world(args.map)
+        # --- MODIFIED: Map Loading Logic ---
+        # This now handles both standard maps and custom .xodr maps
+        if args.xodr_path:
+            if os.path.exists(args.xodr_path):
+                with open(args.xodr_path, encoding='utf-8') as od_file:
+                    data = od_file.read()
+                logging.info(f"Loading map from OpenDRIVE file: {os.path.basename(args.xodr_path)}")
+                # Parameters for procedural generation
+                params = carla.OpendriveGenerationParameters(
+                    vertex_distance=15.0,
+                    max_road_length=500.0,
+                    wall_height=1.0,
+                    additional_width=0.6,
+                    smooth_junctions=False,
+                    enable_mesh_visibility=False
+                )
+                carla_world = client.generate_opendrive_world(data, params)
+            else:
+                logging.error(f"XODR file not found at: {args.xodr_path}")
+                return "exit", joystick_mappings # Exit if file not found
+        else:
+            logging.info(f"Loading standard map: {args.map}")
+            carla_world = client.load_world(args.map)
+        
         original_settings = carla_world.get_settings()
+        # --- End of Map Loading Logic ---
 
         if args.sync:
             settings = carla_world.get_settings()
@@ -162,38 +102,67 @@ def game_loop(args, client, joystick_mappings=None):
 
         # Multi-monitor setup for panoramic view
         single_monitor_width, single_monitor_height = args.width, args.height
-        total_width = single_monitor_width * 2
+        total_width = single_monitor_width * 4
         total_height = single_monitor_height
 
         logging.info(
-            f"Creating double-wide window for panoramic view: {total_width}x{total_height}"
+            f"Creating 4 monitor wide window for panoramic view: {total_width}x{total_height}"
         )
 
         pygame.display.set_icon(pygame.image.load("./images/icon.png"))
 
         display_flags = pygame.HWSURFACE | pygame.DOUBLEBUF | NOFRAME
-        display = pygame.display.set_mode((total_width, total_height), display_flags)
+        display = pygame.display.set_mode(
+            (total_width,
+             total_height),
+            display_flags,
+            args.display,
+            )
 
         pygame.display.set_caption("CARLA MVD Demo")
         logging.info(
             f"Pygame Display Mode Set: Borderless Window at {total_width}x{total_height}"
         )
 
-        show_title_screen(display, args)
-
+        #persistent_keys = show_title_screen(display, args)
+        title= TitleScreen(display,args)
+        persistent_keys, chosen_vehicle_id, carla_blueprint = title.show_title_screen()
+ 
         # Object Initialization
         hud = HUD(total_width, total_height, args)
         world_obj = World(
-            carla_world, hud, args.filter, args.fov, not args.novehicleparams, args
+            carla_world, hud, chosen_vehicle_id, carla_blueprint, args.fov, not args.novehicleparams, args
         )
 
+        """
+        Vehicle Configurations (below):
+
+        Load Vehicle Configs for Vehicle Dynamics (Steering etc.):
+            This is particularly important when 
+            - Unreal Assets (the blueprint library) base asset technical values are incorrect
+            - A placeholder vehicle is used an requires custom specs to simulate accurate vehicle dynamics
+
+        CONTEXT Note:
+            Even if CARLA's package blueprints are close to real-world values, the vehicle still performs
+            poorly given the custom mapping of simulation hardware.
+
+        ### See vehicle_library.txt for a list of pre-configured vehicles, steering-vehicle configuration
+        ### reasoning and validation
+        """
+        
+        # Load customized vehicle specification configurations from custom library (./configs/vehicle_configs)
+        world_obj.load_vehicle_config(chosen_vehicle_id)
+
+
+        ## (deprecated, will soon be incorporated into vehicle_configs)
         if world_obj.player and args.max_rpm > 0:
             physics_control = world_obj.player.get_physics_control()
             physics_control.max_rpm = args.max_rpm
             world_obj.player.apply_physics_control(physics_control)
             logging.info(f"Applied custom max_rpm of {args.max_rpm} to vehicle.")
-
-        controller = DualControl(world_obj, args, joystick_mappings)
+        
+        # Starting main gameloop. Custom configurations loaded.
+        controller = DualControl(world_obj, args, joystick_mappings, persistent_keys)
         joystick_mappings = controller.mapped_controls
         world_obj.finalize_initialization(controller)
         controller.finalize_setup()
@@ -206,11 +175,12 @@ def game_loop(args, client, joystick_mappings=None):
                 carla_world.tick()
             logging.info("Stabilization complete.")
 
+        data_ingestor = DataIngestion.DataIngestion()
         clock = pygame.time.Clock()
 
         # --- Main Tick Loop for this Session ---
         while True:
-            clock.tick(20)
+            clock.tick(50)
             if world_obj.is_reset:
                 if world_obj.should_reset_scores:
                     mvd_feature_extractor.reset_scores()
@@ -220,6 +190,7 @@ def game_loop(args, client, joystick_mappings=None):
                 controller = DualControl(world_obj, args, joystick_mappings)
                 continue
 
+            world_obj.player.show_debug_telemetry(True)
             world_snapshot = carla_world.get_snapshot() if args.sync else None
             if args.sync:
                 carla_world.tick()
@@ -235,10 +206,10 @@ def game_loop(args, client, joystick_mappings=None):
             if mvd_feature_extractor._catastrophic_failure_occurred:
                 logging.warning("Catastrophic failure detected. Ending session.")
                 break
-
+            display_fps = clock.get_fps()
             if world_obj.player and world_obj.player.is_alive:
                 controller.process_commands(world_obj.player, args)
-                world_obj.tick(clock, controller.updated_hud_information(), controller)
+                world_obj.tick(clock, controller.updated_hud_information(), controller, display_fps)
 
                 if world_obj.lane_invasion_sensor_instance:
                     world_obj.lane_invasion_sensor_instance.tick()
@@ -283,35 +254,17 @@ def game_loop(args, client, joystick_mappings=None):
                 # --- RESTORED: Per-frame data logging ---
                 control_datalog = controller.get_datalog()
                 mvd_datalog = mvd_feature_extractor.get_mvd_datalog_metrics()
-                is_off_road = (
-                    (lane_violation_state == Sensors.LaneViolationState.CRITICAL)
-                    if lane_violation_state
-                    else False
-                )
-                crossed_line = (
-                    lane_violation_state
-                    and lane_violation_state != Sensors.LaneViolationState.NORMAL
-                )
-
-                loop_state_log = {
-                    "frame": world_snapshot.frame,
-                    "timestamp": world_snapshot.timestamp.elapsed_seconds,
-                    "location": str(world_obj.player.get_location()),
-                    "speed_kmh": speed_kmh,
-                    "overall_dp_score": overall_dp_score,
-                    "collided": collision_data.get("collided"),
-                    "went_off_road": is_off_road,
-                    "crossed_line": crossed_line,
-                    "lane_violation_state": (
-                        lane_violation_state.name if lane_violation_state else "N/A"
-                    ),
-                    "lane_change_state": (
-                        lane_change_state.name if lane_change_state else "N/A"
-                    ),
-                }
-                loop_state_log.update(control_datalog)
-                loop_state_log.update(mvd_datalog)
-                session_tick_data.append(loop_state_log)
+                metrics = {
+                    'frame': world_snapshot.frame,
+                    'timestamp': world_snapshot.timestamp.elapsed_seconds,
+                    'lane_violation':lane_violation_state,
+                    'lane_change': lane_change_state,
+                    'collision_data': collision_data,
+                    'mvd_datalog': mvd_datalog,
+                    'controller_datalog':control_datalog,
+                    }
+                data_ingestor.log_frame(world_obj,metrics)
+                #session_tick_data.append(metrics)
                 # --- End of logging block ---
 
             world_obj.render(display)
@@ -321,26 +274,18 @@ def game_loop(args, client, joystick_mappings=None):
         logging.info("Session ended. Presenting end screen.")
         final_overall_scores = mvd_feature_extractor.get_mvd_datalog_metrics()
         end_screen = EndScreen(display, final_overall_scores, hud.panel_fonts)
-        action = end_screen.run()
+        action = end_screen.run(persistent_keys)
         return action, joystick_mappings
 
     except Exception as e:
         logging.critical(f"Critical error in game loop: {e}", exc_info=True)
         return "exit", joystick_mappings
     finally:
+        if 'data_ingestor' in locals():
+            data_ingestor.save_to_csv()
         # --- RESTORED: Write session log to file ---
-        if session_tick_data:
-            try:
-                log_dir = "./Session_logs/"
-                os.makedirs(log_dir, exist_ok=True)
-                log_filename = f"mvd_session_log_{time.strftime('%Y%m%d_%H%M%S')}.json"
-                with open(os.path.join(log_dir, log_filename), "w") as f:
-                    json.dump(session_tick_data, f, indent=2)
-                logging.info(
-                    f"MVD session data written to {os.path.join(log_dir, log_filename)}"
-                )
-            except Exception as e:
-                logging.error(f"Error writing MVD session log: {e}")
+        #if session_tick_data:
+        #    consolidate_and_save_log(session_tick_data)
         # --- End of log writing block ---
 
         if world_obj:
@@ -418,7 +363,8 @@ def main():
     argparser.add_argument(
         "--max-rpm", default=4000.0, type=float, help="Maximum engine RPM"
     )
-    argparser.add_argument("--map", metavar="M", default="Town10HD", help="Map")
+    argparser.add_argument(
+        "--map", metavar="M", default="Town10HD", help="Map")
     argparser.add_argument(
         "--noackermann", action="store_true", help="Disable Ackermann Steering Physics"
     )
@@ -426,7 +372,7 @@ def main():
         "--novehicleparams", action="store_true", help="Disable custom vehicle physics"
     )
     argparser.add_argument(
-    "--invert-steer", action="store_true", help="Invert steering input for truck mounts."
+        "--invert-steer", action="store_true", help="Invert steering input for truck mounts."
     )
     argparser.add_argument(
         "--mvd-config",
@@ -435,41 +381,138 @@ def main():
         help="Path to the JSON file with penalty configurations.",
     )
     argparser.add_argument(
+        "--quality",
+        metavar="QUALITY",
+        default="Epic",
+        type = str,
+        help="Define CARLA render quality",
+    )
+
+    argparser.add_argument(
         "--display",
         metavar="INDEX",
-        default=1,
+        default=0,
         type=int,
         help="Index of the display to use for the main window (e.g., 0, 1).",
     )
 
+    argparser.add_argument(
+        '-x', '--xodr-path',
+        metavar='XODR_FILE_PATH',
+        help='load a new map with a minimum physical road representation of the provided OpenDRIVE'
+    )
+
+    argparser.add_argument(
+        "--windowed",
+        action='store_true',  # Correct way to handle a boolean flag
+        help="Run the CARLA server in a windowed mode.",
+    )
+    argparser.add_argument(
+        "--ResX",
+        metavar="X",
+        default=None,         # Correct default for an optional integer
+        type=int,
+        help="Store X resolution for windowed render",
+    )
+    argparser.add_argument(
+        "--ResY",
+        metavar="Y",
+        default=None,         # Correct default for an optional integer
+        type=int,
+        help="Set Y resolution for windowed render",
+    )
+
+    argparser.add_argument(
+        "--screens",
+        metavar="SCR",
+        default=4,         # Correct default for an optional integer
+        type=int,
+        help="Define Number of Screens",
+    )
+    argparser.add_argument(
+        "--steer",
+        metavar="TRN",
+        default= None,         # Correct default for an optional integer
+        type=float,
+        help="Define steering angle",
+    )
+
+    argparser.add_argument(
+        "--vision-compare",
+        action="store_true",
+        help="Show split view: left raw front-left feed, right vision overlay.")
+    
+    argparser.add_argument(
+        "--record-vision-demo",
+        metavar="OUT.mp4",
+        default=None,
+        help="Write the split view video (requires imageio[ffmpeg]).")
+
     args = argparser.parse_args()
 
-    log_level = logging.DEBUG if args.debug else logging.INFO
-    logging.basicConfig(format="%(levelname)s: %(message)s", level=log_level)
-
-    os.environ["SDL_VIDEO_WINDOW_POS"] = "0,0"
-    pygame.init()
-
-    try:
-        args.width, args.height = [int(x) for x in args.res.split("x")]
-    except ValueError:
-        args.width, args.height = 1920, 1080
-
-    client = None
-    global carla_server_process
+    # Get the original state of all monitors before doing anything else
+    simulation_resolution = args.res
+    monitors = DynamicMonitor(simulation_resolution)
+    original_layout = monitors.get_monitor_layout()
+    if not original_layout:
+        print("Could not detect monitor setup. Exiting.")
+        return
 
     try:
+        # ----------------------------------------------------------------------
+        # Set the desired layout for the simulation
+        # ----------------------------------------------------------------------
+        print(f"\nConfiguring monitors for simulation with resolution: {simulation_resolution}")
+        # This single function call replaces your old logic
+        monitors.arrange_monitors_horizontally(simulation_resolution, original_layout)
+        
+        # Give the window manager a moment to adjust
+        time.sleep(2) 
+
+        # ----------------------------------------------------------------------
+        # --- ALL SIMULATION LOGIC IS NOW INSIDE THE TRY BLOCK ---
+        # ----------------------------------------------------------------------
+        print("\nStarting Pygame application...")
+        log_level = logging.DEBUG if args.debug else logging.INFO
+        logging.basicConfig(format="%(levelname)s: %(message)s", level=log_level)
+
+        # Set the position for the Pygame window (now reliably at the top-left)
+        os.environ["SDL_VIDEO_WINDOW_POS"] = "0,0"
+
+        pygame.init()
+
+        try:
+            args.width, args.height = [int(x) for x in args.res.split("x")]
+        except ValueError:
+            args.width, args.height = 1920, 1080
+
+        client = None
+        global carla_server_process
+
         if not args.no_launch_carla:
             if not args.carla_root:
                 logging.error("CARLA_ROOT path not provided.")
                 sys.exit(1)
             carla_exe_path = os.path.join(args.carla_root, "CarlaUE4.sh")
+
+            # --- CORRECTED LAUNCH COMMAND LOGIC ---
             command = [
                 carla_exe_path,
                 f"-carla-rpc-port={args.port}",
-                "-quality-level=Epic",
-                "-RenderOffScreen",
+                f"-quality-level={args.quality.capitalize()}",
             ]
+            
+            # Conditionally add flags only if they are set
+            if args.windowed:
+                command.append('-windowed') # Add the flag without a value
+            else:
+                command.append('-RenderOffScreen')
+            
+            if args.ResX is not None:
+                command.append(f"-ResX={args.ResX}")
+
+            if args.ResY is not None:
+                command.append(f"-ResY={args.ResY}")
             logging.info(f"Launching CARLA server: {' '.join(command)}")
             carla_server_process = subprocess.Popen(command)
             time.sleep(10)
@@ -478,10 +521,8 @@ def main():
         for i in range(max_retries):
             try:
                 client = carla.Client(args.host, args.port)
-                client.set_timeout(20.0)
-                logging.info(
-                    f"Successfully connected to CARLA Server {client.get_server_version()}"
-                )
+                client.set_timeout(3000.0)
+                logging.info(f"Successfully connected to CARLA Server {client.get_server_version()}")
                 break
             except RuntimeError as e:
                 logging.warning(f"Connection failed: {e}. Retrying...")
@@ -489,15 +530,11 @@ def main():
                     raise
                 time.sleep(retry_delay)
 
-        log_dir = "./Carla_recorder_logs/"
-        os.makedirs(log_dir, exist_ok=True)
-        recorder_filename = os.path.join(
-            log_dir, f"session_{time.strftime('%Y%m%d_%H%M%S')}.log"
-        )
-        client.start_recorder(recorder_filename, True)
+        client.start_recorder(f"session_{time.strftime('%Y%m%d_%H%M%S')}.log", True)
 
         joystick_mappings = None
         while True:
+            logging.info("Simulation running")
             action, new_mappings = game_loop(args, client, joystick_mappings)
             joystick_mappings = new_mappings
             if action == "exit":
@@ -505,21 +542,18 @@ def main():
             elif action == "restart":
                 continue
 
-    except KeyboardInterrupt:
-        print("\nCancelled by user. Exiting...")
     except Exception as e:
         logging.critical(f"Unhandled exception in main: {e}", exc_info=True)
     finally:
-        if client:
+        # This block ALWAYS runs, ensuring resolution is restored
+        monitors.restore_monitor_layout(original_layout)
+        # --- Your existing cleanup logic ---
+        if 'client' in locals() and client:
             client.stop_recorder()
         if carla_server_process:
-            sys_task.terminate_popen_process_gracefully(
-                carla_server_process, "CARLA Server"
-            )
+            sys_task.terminate_popen_process_gracefully(carla_server_process, "CARLA Server")
         sys_task.sig_kill_engine(sys_task.get_running_processes())
         pygame.quit()
         logging.info("Main script execution finished.")
-
-
 if __name__ == "__main__":
     main()

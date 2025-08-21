@@ -935,105 +935,170 @@ class HUD(object):
             self._info_text[name] = parameter
 
     def render(self, display):
+        """Renders cameras and the right-side HUD panel with a debounced notification queue.
+        Assumes:
+        - self.panel_fonts is prebuilt in __init__ (no per-frame font opens)
+        - self.info_renderers dict exists (dynamic rendering of _info_text)
+        - self._draw_notifications(display, x, y) is implemented (debounced queue)
         """
-        Renders cameras and the HUD.
-        - FIX: Restructured to ensure the main HUD panel always renders.
-        - FIX: Updates the perception module with the correct camera for each panel.
-        - FIX: Corrected function call to get camera image arrays.
-        - FIX: Removed redundant/incorrect drawing code and enabled overlays on all panels.
-        """
-        # --- 1) Render either the Vision Comparison view OR the Panoramic view ---
-        
-        # Vision compare mode: LEFT = raw front-left cam, RIGHT = same with overlay
+        if not hasattr(self, "_logged_render_size"):
+            self._logged_render_size = True
+            logging.info(f"[HUD] render() surface = {display.get_width()}x{display.get_height()}")
+        #--
+        # 0) Vision module
+        #-- 
+        import pygame
+# --- Vision compare mode: LEFT = raw front-left cam, RIGHT = same with overlay ---
         if self.vision_compare and self.world and self.world.camera_manager:
             cm = self.world.camera_manager
             W, H = cm.single_monitor_dim
             left_arr = cm.get_latest_array('main')
-
             if left_arr is not None:
                 # Left (raw)
-                left_surf = pygame.surfarray.make_surface(left_arr.swapaxes(0, 1)).convert()
+                left_surf = pygame.surfarray.make_surface(left_arr.swapaxes(0,1)).convert()
                 display.blit(left_surf, (0, 0))
 
                 # Right (overlay)
                 right_surf = left_surf.copy()
                 if self.perception:
-                    # Ensure perception is using the correct camera for this view
-                    cam_actor = cm.get_camera_actor_for_queue('main')
-                    if cam_actor:
-                        self.perception.set_camera(cam_actor)
-                    
                     objs = self.perception.compute(max_objects=24, include_2d=True)
-                    font = self.panel_fonts.get('small_label', pygame.font.Font(None, 16))
+                    font = self.get_font(16, bold=True) if hasattr(self, "get_font") else pygame.font.Font(None, 16)
                     for o in objs:
                         bb = o.get("bbox_xyxy")
-                        if not bb:
+                        if not bb: 
                             continue
-                        x1, y1, x2, y2 = map(int, bb)
-                        pygame.draw.rect(right_surf, (0, 255, 0), pygame.Rect(x1, y1, x2 - x1, y2 - y1), 2)
+                        x1,y1,x2,y2 = map(int, bb)
+                        pygame.draw.rect(right_surf, (0,255,0), pygame.Rect(x1,y1,x2-x1,y2-y1), 2)
                         label = f"{o['cls']}  {o['distance_m']:.1f}m  {o['rel_speed_mps']:+.1f}m/s"
-                        txt = font.render(label, True, (255, 255, 255))
-                        right_surf.blit(txt, (x1, max(0, y1 - 18)))
-                
-                display.blit(right_surf, (W, 0))
+                        txt = font.render(label, True, (255,255,255))
+                        right_surf.blit(txt, (x1, max(0, y1-18)))
 
+                display.blit(right_surf, (W, 0))  # right panel sits in the next column
+
+                # Optional: write a side-by-side MP4 frame
                 if self._vision_writer is not None:
                     try:
-                        right_np = pygame.surfarray.array3d(right_surf).swapaxes(0, 1)
+                        right_np = pygame.surfarray.array3d(right_surf).swapaxes(0,1)
                         frame = np.concatenate([left_arr, right_np], axis=1)
                         self._vision_writer.append_data(frame)
                     except Exception as e:
                         logging.error(f"[VisionDemo] frame write failed: {e}")
-        
-        # Panoramic camera views + overlays
-        elif hasattr(self, 'world') and self.world and self.world.player and self.world.camera_manager:
+
+                # Skip normal panoramic draw when comparing
+    
+
+
+        # -------------------------------------------------------------
+        # 1) Panoramic camera views + 3D bounding box overlays (unchanged)
+        # -------------------------------------------------------------
+        """
+        if hasattr(self, 'world') and self.world and self.world.player and self.world.camera_manager:
+            player = self.world.player
+            camera_manager = self.world.camera_manager
+
+            panoramic_cameras = [
+                (camera_manager.sensors.get('left_side_cam'), 0),
+                (camera_manager.sensors.get('left_dash_cam'), camera_manager.single_monitor_dim[0]),
+                (camera_manager.sensors.get('right_dash_cam'), camera_manager.single_monitor_dim[0] * 2),
+                (camera_manager.sensors.get('right_side_cam'), camera_manager.single_monitor_dim[0] * 3),
+            ]
+
+            for cam, offset_x in panoramic_cameras:
+                if cam:
+                    cam_surface = pygame.Surface(camera_manager.single_monitor_dim, pygame.SRCALPHA)
+                    # Draw the player's bounding box into this camera's perspective
+                    self.draw_3d_bounding_box(
+                        display=cam_surface,
+                        camera=cam,
+                        bounding_box=player.bounding_box,
+                        world_transform=player.get_transform()
+                    )
+                    display.blit(cam_surface, (offset_x, 0))
+        """
+        # 1) Panoramic camera views + overlays
+        # 1) Panoramic camera views + overlay on LEFT-DASH only
+        if hasattr(self, 'world') and self.world and self.world.player and self.world.camera_manager:
             cm = self.world.camera_manager
             W = cm.single_monitor_dim[0]
 
             panels = [
-                ('left_side_cam', 0),
-                ('left_dash_cam', W),
-                ('right_dash_cam', 2 * W),
-                ('right_side_cam', 3 * W),
+                ('left_side_cam',   0),
+                ('left_dash_cam',   W),        # <-- overlay will go here
+                ('right_dash_cam',  2*W),
+                ('right_side_cam',  3*W),
             ]
+
+            # Compute detections ONCE (uses left-dash camera actor from HUD.tick)
+            objs = []
+            font = None
+            if getattr(self, 'perception', None):
+                objs = self.perception.compute(max_objects=24, include_2d=True)
+                font = pygame.font.Font(None, 18)
 
             for name, xoff in panels:
                 cam_actor = cm.sensors.get(name)
                 if not cam_actor:
                     continue
 
-                # Get latest RGB frame for this camera's queue
+                # get latest frame for this camera's queue
                 try:
                     queue_key = cm.config['panoramic_setup'][name]['queue']
                 except Exception:
                     queue_key = 'main'
+                with cm.array_lock:
+                    arr = cm.processed_arrays.get(queue_key)
 
-                arr = cm.get_latest_array(queue_key) 
-                
+                # build the pygame surface for this tile
                 if arr is None:
                     surf = pygame.Surface(cm.single_monitor_dim).convert()
                     surf.fill((10, 10, 10))
                 else:
                     surf = pygame.surfarray.make_surface(arr.swapaxes(0, 1)).convert()
 
-                # Vision overlay (vehicles/pedestrians)
-                if getattr(self, 'perception', None):
-                    self.perception.set_camera(cam_actor)
-                    
+                # --- ONLY for left_dash_cam: draw overlay ON THE SURF before blitting ---
+                if name == 'left_dash_cam' and objs:
+                    for o in objs:
+                        bb = o.get("bbox_xyxy")
+                        if not bb: 
+                            continue
+                        x1, y1, x2, y2 = map(int, bb)
+                        pygame.draw.rect(surf, (0, 255, 0), pygame.Rect(x1, y1, x2 - x1, y2 - y1), 2)
+                        label = o.get("label") or f"{o['cls']} {o['distance_m']:.1f}m {o['rel_speed_mps']:+.1f}m/s"
+                        surf.blit(font.render(label, True, (255, 255, 255)), (x1, max(0, y1 - 18)))
+
+                # now blit the (possibly annotated) surf; nothing will overwrite it afterward
+                display.blit(surf, (xoff, 0))
+                # --- OPTIONAL: Vision overlay (vehicles/pedestrians) ---
+
+                # --- Vision overlay on LEFT-DASH tile (column 2) ---
+                if getattr(self, 'perception', None) and self.world and self.world.camera_manager:
+                    cm = self.world.camera_manager
+                    W = cm.single_monitor_dim[0]   # x offset of left-dash tile
                     objs = self.perception.compute(max_objects=24, include_2d=True)
-                    font = self.panel_fonts.get('small_label', pygame.font.Font(None, 18))
+
+                    import pygame
+                    font = pygame.font.Font(None, 18)
+                    # yellow heartbeat so you know this branch ran
+                    pygame.draw.rect(display, (255,255,0), pygame.Rect(W+10, 10, 120, 24), 2)
+
                     for o in objs:
                         bb = o.get("bbox_xyxy")
                         if not bb:
                             continue
                         x1, y1, x2, y2 = map(int, bb)
-                        pygame.draw.rect(surf, (0, 255, 0), (x1, y1, x2 - x1, y2 - y1), 2)
-                        label = f"{o['cls']} {o['distance_m']:.1f}m {o['rel_speed_mps']:+.1f}m/s"
-                        surf.blit(font.render(label, True, (255, 255, 255)), (x1, max(0, y1 - 18)))
-                logging.info(f"[Vision] objs={len(self.perception.compute(max_objects=24, include_2d=False))}")
-                display.blit(surf, (xoff, 0))
+                        rect = pygame.Rect(x1 + W, y1, (x2 - x1), (y2 - y1))  # shift by W
+                        pygame.draw.rect(display, (0, 255, 0), rect, 2)
+                        label = o.get("label") or f"{o['cls']} {o['distance_m']:.1f}m {o['rel_speed_mps']:+.1f}m/s"
+                        display.blit(font.render(label, True, (255,255,255)), (rect.x, max(0, rect.y - 18)))
 
-        # --- 2) Render the HUD panel, notifications, etc. (This code now runs always) ---
+
+                # (Optional) draw the player's own 3D bbox on top of the video
+                # self.draw_3d_bounding_box(surf, cam_actor, self.world.player.bounding_box, self.world.player.get_transform())
+
+                display.blit(surf, (xoff, 0))
+        # -------------------------------------------------------------
+        # 2) Right-side HUD panel (glassmorphic) + dynamic info rendering
+        # -------------------------------------------------------------
         if self._show_info and getattr(self, '_info_text', None):
             # Layout across 4 screens
             main_screen_offset_x = self.dim[0] // 4
@@ -1055,19 +1120,31 @@ class HUD(object):
             v_offset = panel_y + padding
             h_offset = panel_x + padding
 
+            # -------- Dynamic info block rendering --------
             for key, value in self._info_text.items():
                 renderer = self.info_renderers.get(key)
                 if renderer:
+                    # Pass panel geometry for right-aligned values (sub_label, etc.)
                     v_offset = renderer(display, h_offset, v_offset, value, panel_x, panel_w, padding)
                 else:
+                    # Fallback: simple key:value line
                     v_offset = self._render_text(
                         display, h_offset, v_offset, f"{key}: {value}", self.panel_fonts["small_label"], (200, 200, 200), 10
                     )
-            
-            v_offset = self._draw_notifications(display, h_offset, v_offset)
+
+            # -------- Debounced, panel-local notifications (NEW) --------
+            # Draw small queued messages below the panel content using cached fonts.
+            v_offset = self._draw_notifications(display, h_offset, v_offset)  # NEW
             self._draw_center_notifications(display)
-        
-        # Legacy fullscreen notifications
+
+        # -------------------------------------------------------------
+        # 3) (Optional) Legacy fullscreen notifications
+        # -------------------------------------------------------------
+        # If you want to keep the legacy _active_notifications (center overlays),
+        # leave the original loop here. If you prefer ONLY the debounced queue
+        # inside the panel, remove/comment the legacy block.
+        #
+        # Example of preserving legacy behavior:
         if hasattr(self, '_active_notifications') and self._active_notifications:
             y_off = getattr(self, '_notification_base_pos_y', int(self.dim[1] * 0.85))
             for notif in reversed(self._active_notifications):

@@ -15,13 +15,13 @@ try:
         K_BACKQUOTE,
         K_BACKSPACE,
         K_COMMA,
-        K_DOWN,
+#        K_DOWN,
         K_ESCAPE,
-        K_LEFT,
+#        K_LEFT,
         K_PERIOD,
-        K_RETURN,
-        K_RIGHT,
-        K_SLASH,
+#        K_RETURN,
+#        K_RIGHT,
+#        K_SLASH,
         K_SPACE,
         K_TAB,
         K_UP,
@@ -29,15 +29,16 @@ try:
         KMOD_SHIFT,
         K_a,
         K_c,
-        K_d,
+#        K_d,
         K_h,
         K_m,
         K_p,
         K_q,
-        K_s,
-        K_w,
+#        K_s,
+#        K_w,
         K_z,
         K_x,
+        K_n
     )
 except ImportError:
     raise RuntimeError("cannot import pygame, make sure pygame package is installed")
@@ -53,17 +54,20 @@ class DualControl(object):
     from control logic execution using a command queue.
     """
 
-    def __init__(self, world_instance, args, existing_mappings=None):
+    def __init__(self, world_instance, args, existing_mappings=None, map_keys=None):
         self.world = world_instance
         self.args = args
         self._autopilot_enabled = self.args.autopilot
-
+        self.last_ackermann = None
+        self._hud = None  # set by World during finalize
+        self.args_steer_degrees = args.steer
         # --- Queue and State Variables ---
         self._command_queue = collections.deque()
         self._current_steer = 0.0
+        self._clamped_steer = 0.0
         self._current_throttle = 0.0
         self._current_brake = 0.0
-        self._handbrake_state = False
+        self._handbrake_state = True
         self._driver_view = True
         self._is_resetting = False
         self._blinker_state = 0
@@ -71,6 +75,9 @@ class DualControl(object):
         self._collision_lockout_active = False
         self._park_engaged = False
         self.data_log = {}
+        self._map_keys = map_keys
+        self._last_ts_ms = None
+
 
         # CARLA control objects
         self._ackermann_disabled = self.args.noackermann
@@ -120,6 +127,10 @@ class DualControl(object):
         self._brake_joy_obj, self._brake_axis_idx = None, None
         self._brake_axis_props = {"deadzone": self.args.pedal_deadzone}
         button_attrs = [
+            "_ui_enter_joy_idx",
+            "_ui_enter_button_idx",
+            "_ui_escape_joy_idx",
+            "_ui_escape_button_idx",
             "_reverse_button_joy_idx",
             "_reverse_button_idx",
             "_handbrake_button_joy_idx",
@@ -138,16 +149,44 @@ class DualControl(object):
             "_blinker_right_button_idx",
             "_hazard_button_joy_idx",
             "_hazard_button_idx",
+            "_cycle_weather_joy_idx",
+            "_cycle_weather_button_idx",
+            "_cycle_weather_reverse_joy_idx",
+            "_cycle_weather_reverse_button_idx"
+            "_help_joy_idx",
+            "_help_button_idx",
+            "_park_joy_idx",
+            "_park_btn_idx",
+
         ]
         for attr in button_attrs:
             setattr(self, attr, None)
+        if self._map_keys:
+            # Map the Enter button
+            enter_map = self._map_keys.get("Enter")
+            if enter_map and isinstance(enter_map, dict):
+                # This is where you find the joystick's internal index
+                for caps in self._joystick_capabilities:
+                    if caps['id'] == enter_map.get("joy_id"):
+                        self._ui_enter_joy_idx = caps['index']
+                        self._ui_enter_button_idx = enter_map.get("button_id")
+                        break
 
+            # Map the Escape button
+            escape_map = self._map_keys.get("Escape")
+            if escape_map and isinstance(escape_map, dict):
+                # Find the joystick's internal index
+                for caps in self._joystick_capabilities:
+                    if caps['id'] == escape_map.get("joy_id"):
+                        self._ui_escape_joy_idx = caps['index']
+                        self._ui_escape_button_idx = escape_map.get("button_id")
+                        break
         if existing_mappings:
             self.mapped_controls = existing_mappings
             self._apply_loaded_mappings()
         elif self._joysticks_present:
             mapper = DynamicMapping(
-                self.world, self._joysticks, self._joystick_capabilities
+                self.world, self._joysticks, self._joystick_capabilities, self._map_keys
             )
             self.mapped_controls = mapper.run_configuration()
             if self.mapped_controls:
@@ -157,16 +196,19 @@ class DualControl(object):
         else:
             logging.info("No joysticks. Keyboard only.")
 
-    def _populate_datalog(self, raw_inputs, is_joystick_mode):
+
+    def populate_datalog(self, raw_inputs, is_joystick_mode):
         """Helper method to fill the data_log dictionary."""
         self.data_log["input_mode"] = "joystick" if is_joystick_mode else "keyboard"
         self.data_log["raw_inputs"] = {
             "steer": raw_inputs.get("steer"),
+            "clamped_steer": self._clamped_steer,
             "throttle": raw_inputs.get("throttle"),
             "brake": raw_inputs.get("brake"),
         }
         self.data_log["normalized_outputs"] = {
             "steer": self._current_steer,
+            "clamped_steer": self._clamped_steer,
             "throttle": self._current_throttle,
             "brake": self._current_brake,
         }
@@ -204,10 +246,10 @@ class DualControl(object):
         if self.world and self.world.player:
             # Apply Ackermann PID settings
             ackermann_settings = carla.AckermannControllerSettings()
-            ackermann_settings.speed_kp = 0.8
+            ackermann_settings.speed_kp = 0.6
             ackermann_settings.speed_ki = 0
             ackermann_settings.speed_kd = 0.2
-            ackermann_settings.accel_kp = 0.8
+            ackermann_settings.accel_kp = 0.6
             ackermann_settings.accel_ki = 0
             ackermann_settings.accel_kd = 0.2
 
@@ -291,6 +333,8 @@ class DualControl(object):
         # ... and so on for the rest of the method
         # Button Mappings
         button_actions = [
+            "UI_ENTER",
+            "UI_ESCAPE",
             "REVERSE",
             "HANDBRAKE",
             "TOGGLE_MANUAL_GEAR",
@@ -300,8 +344,14 @@ class DualControl(object):
             "BLINKER_LEFT",
             "BLINKER_RIGHT",
             "HAZARD",
+            "NEXT_WEATHER",
+            "NEXT_WEATHER_REVERSE",
+            "HELP",
+            "PARK"
         ]
         attr_map = {
+            "UI_ENTER": ("_ui_enter_joy_idx", "_ui_enter_button_idx"),
+            "UI_ESCAPE": ("_ui_escape_joy_idx", "_ui_escape_button_idx"),
             "REVERSE": ("_reverse_button_joy_idx", "_reverse_button_idx"),
             "HANDBRAKE": ("_handbrake_button_joy_idx", "_handbrake_button_idx"),
             "TOGGLE_MANUAL_GEAR": (
@@ -322,7 +372,26 @@ class DualControl(object):
                 "_blinker_right_button_joy_idx",
                 "_blinker_right_button_idx",
             ),
-            "HAZARD": ("_hazard_button_joy_idx", "_hazard_button_idx"),
+            "HAZARD": (
+                "_hazard_button_joy_idx", 
+                "_hazard_button_idx"
+            ),
+            "NEXT_WEATHER": (
+                "_cycle_weather_joy_idx",
+                "_cycle_weather_button_idx"
+            ),
+            "NEXT_WEATHER_REVERSE": (
+                "_cycle_weather_joy_reverse_idx",
+                "_cycle_weather_button_reverse_idx"
+            ),
+            "HELP": (
+                "_help_joy_idx",
+                "_help_button_idx"
+            ),
+            "PARK": (
+                "_park_joy_idx",
+                "_park_button_idx"
+            )
         }
         for action_id in button_actions:
             btn_map = self.mapped_controls.get(action_id)
@@ -370,7 +439,7 @@ class DualControl(object):
             if event.type == pygame.QUIT:
                 return True
 
-            elif event.type == pygame.JOYBUTTONDOWN:
+            elif event.type == pygame.JOYBUTTONUP:
                 joy_id = event.joy  # In this context, event.joy is the index.
                 btn_idx = event.button
                 if (
@@ -434,14 +503,54 @@ class DualControl(object):
                     self._command_queue.append(
                         {"type": "button", "action": "toggle_hazard"}
                     )
+                
+                elif (
+                    joy_id == self._cycle_weather_joy_idx
+                    and btn_idx == self._cycle_weather_button_idx
+                ):
+                    self._command_queue.append(
+                        {"type": "button", "action": "cycle_weather"}
+                    )
+
+                elif (
+                    joy_id == self._cycle_weather_reverse_joy_idx
+                    and btn_idx == self._cycle_weather_reverse_button_idx
+                ):
+                    self._command_queue.append(
+                        {"type": "button", "action": "cycle_weather_reverse"}
+                    )
+
+                elif (
+                    joy_id == self._ui_escape_joy_idx
+                    and btn_idx == self._ui_escape_button_idx
+                ):
+                    return True
+                
+                elif (
+                    joy_id == self._help_joy_idx
+                    and btn_idx == self._help_button_idx
+                ):
+                    self._command_queue.append(
+                        {"type": "button", "action": "toggle_help"}
+                    )
+                
+                elif (
+                    joy_id == self._park_joy_idx
+                    and btn_idx == self._park_btn_idx
+                ):
+                    self._command_queue.append(
+                        {"type":"button","action":"toggle_park"}
+                    )
 
             elif event.type == pygame.KEYUP:
+                # QUIT
                 if (
                     event.key == K_ESCAPE
                     or (event.key == K_c and (pygame.key.get_mods() & KMOD_CTRL))
                     or (event.key == K_q and (pygame.key.get_mods() & KMOD_CTRL))
                 ):
                     return True
+                # SIMULATION FUNCTIONS
                 if event.key == K_q:
                     self._command_queue.append(
                         {"type": "button", "action": "toggle_reverse"}
@@ -463,8 +572,10 @@ class DualControl(object):
                         {"type": "button", "action": "gear_down"}
                     )
                 if event.key == K_PERIOD:
-                    self._command_queue.append({"type": "button", "action": "gear_up"})
-                if event.key == K_p:
+                    self._command_queue.append(
+                        {"type": "button", "action": "gear_up"}
+                    )
+                if event.key == K_a:
                     self._command_queue.append(
                         {"type": "button", "action": "toggle_autopilot"}
                     )
@@ -493,6 +604,14 @@ class DualControl(object):
                     self._command_queue.append(
                         {"type": "button", "action": "next_sensor"}
                     )
+                if event.key == K_n:
+                    self._command_queue.append(
+                        {"type": "button", "action": "cycle_weather"}
+                    )
+                if event.key == K_n and (pygame.key.get_mods() & KMOD_SHIFT):
+                    self._command_queue.append(
+                        {"type": "button", "action": "cycle_weather_reverse"}
+                    )
                 if event.key == K_BACKSPACE:
                     if event.mod & KMOD_CTRL:
                         self._command_queue.append(
@@ -519,7 +638,6 @@ class DualControl(object):
         joystick_driving_active = (
             self._steer_joy_obj or self._throttle_joy_obj or self._brake_joy_obj
         )
-
         while self._command_queue:
             command = self._command_queue.popleft()
             if command["type"] == "axis":
@@ -533,7 +651,12 @@ class DualControl(object):
                 elif action == "toggle_hazard":
                     self._blinker_state = 0 if self._blinker_state == 3 else 3
                 elif action == "toggle_reverse":
-                    self._control.reverse = not self._control.reverse
+                    if player_carla_actor.get_velocity().length()>5:
+                        self.world.hud.warning_manager.add_warning(
+                            "reverse","REVERSE_UNAVAILABLE"
+                        )
+                    else:
+                        self._control.reverse = not self._control.reverse
                 elif action == 'toggle_park':
                     self._park_engaged = not self._park_engaged
                 elif action == "toggle_handbrake":
@@ -554,6 +677,10 @@ class DualControl(object):
                     self.world.camera_manager.toggle_camera()
                 elif action == "next_sensor":
                     self.world.camera_manager.next_sensor()
+                elif action == "cycle_weather":
+                    self.world.next_weather()
+                elif action == "cycle_weather_reverse":
+                    self.world.next_weather(reverse=True)
                 elif action == "restart_world":
                     self.world.is_reset = True
                 elif action == "restart_world_and_reset_scores":
@@ -598,15 +725,53 @@ class DualControl(object):
             )
             self._current_steer = self._normalize_steer_value(raw_axis_values["steer"])
 
+            # 1. Define your desired limit in radians
+            desired_steer_limit_rad = 0.3491 # Approx. 20 degrees
+            now_ms = pygame.time.get_ticks()
+            dt = (now_ms - self._last_ts_ms) * 0.001 if self._last_ts_ms is not None else 0.0
+            self._last_ts_ms = now_ms
+
+            # --- compute normalized clamp from physics (software cap respected)
+            normalized_limit, vehicle_max_deg = self._compute_normalized_steer_limit(
+                player_carla_actor, self.args_steer_degrees
+            )
+
+            now_ms = pygame.time.get_ticks()
+            dt = (now_ms - self._last_ts_ms) * 0.001 if getattr(self, "_last_ts_ms", None) is not None else 0.0
+            self._last_ts_ms = now_ms
+
+            desired_norm = max(-normalized_limit, min(normalized_limit, self._current_steer))
+
+            if getattr(self.world, "steering_model", None):
+                try:
+                    speed_ms = player_carla_actor.get_velocity().length()
+                    yaw_rate = player_carla_actor.get_angular_velocity().z
+                    target_wheel_deg = self.world.steering_model.compute(
+                        driver_input=self._current_steer,
+                        speed_ms=speed_ms,
+                        yaw_rate=yaw_rate,
+                        dt=dt,
+                    )
+                    # normalize against the physical max we fetched from CARLA
+                    if vehicle_max_deg > 1e-6:
+                        model_norm = max(-1.0, min(1.0, target_wheel_deg / vehicle_max_deg))
+                        desired_norm = max(-normalized_limit, min(normalized_limit, model_norm))
+                except Exception as e:
+                    logging.warning(f"SteeringModel compute failed; falling back: {e}")
+
+            self._clamped_steer = desired_norm
+
+            #logging.info(f"CQ  |Max steering: {vehicle_max_deg} |  CLAMPED_STEERING: {self._clamped_steer} | NORM_LIM: {normalized_limit} | CUR_STR: {self._current_steer}")
+
         if self._ackermann_disabled:
             self._control.throttle = self._current_throttle
             self._control.brake = self._current_brake
-            self._control.steer = max(-1.0, min(1.0, self._current_steer))
+            self._control.steer = self._clamped_steer
             player_carla_actor.apply_control(self._control)
         else:
             # Define vehicle physics parameters
-            max_accel, max_brake_decel, max_jerk, max_speed_ms = 3.5, 8.0, 10.0, 40.23
-            self._ackermann_control.steer = max(-1.0, min(1.0, self._current_steer))
+            max_accel, max_brake_decel, max_jerk, max_speed_ms = 4, 10, 6.0, 40.23
+            self._ackermann_control.steer = self._clamped_steer
             self._ackermann_control.jerk = max_jerk
 
             # === Main Control Logic: Pedals / Idle / Coasting ===
@@ -676,6 +841,40 @@ class DualControl(object):
                 self._ackermann_control.speed *= -1.0
 
             player_carla_actor.apply_ackermann_control(self._ackermann_control)
+            self.populate_datalog(raw_axis_values, joystick_driving_active)
+
+
+    def _compute_model_steer(self, hw_steer: float, dt: float) -> float:
+        try:
+            sm = getattr(self.world, "steering_model", None)
+            if sm is None:
+                return self._normalize_steer_value(hw_steer)
+            vel = self.world.player.get_velocity()
+            V = (vel.x**2 + vel.y**2) ** 0.5
+            return sm.compute(hw_steer, V, dt)
+        except Exception as e:
+            logging.error(f"_compute_model_steer fallback: {e}")
+            return self._normalize_steer_value(hw_steer)
+        
+    def _compute_normalized_steer_limit(self, player, desired_deg=None):
+        """
+        Returns (normalized_limit in [-1..1], vehicle_max_deg).
+        - desired_deg=None -> use full physical range (no software cap)
+        - desired_deg=number -> clamp to min(desired_deg, vehicle_max_deg)
+        """
+        pc = player.get_physics_control()
+        steerables = [getattr(w, "max_steer_angle", 0.0) for w in pc.wheels if getattr(w, "max_steer_angle", 0.0) > 0.0]
+        vehicle_max_deg = max(steerables) if steerables else 0.0
+        #logging.info(f'ctrl_fx_args_deg{desired_deg}')
+        if vehicle_max_deg <= 0.0:
+            return 1.0, 0.0  # fallback: no clamp
+
+        elif not desired_deg:
+            effective_deg = vehicle_max_deg 
+        else:
+            effective_deg=min(desired_deg, vehicle_max_deg)
+        #logging.info(f'effective_deg: {effective_deg}, desired deg: {desired_deg}, vehicle_max: {vehicle_max_deg}, calc: {effective_deg/vehicle_max_deg}')
+        return (effective_deg / vehicle_max_deg), vehicle_max_deg
 
     def get_blinker_state(self):
         return self._blinker_state

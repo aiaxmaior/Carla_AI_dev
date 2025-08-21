@@ -4,7 +4,7 @@ import os
 import json
 import time
 import logging
-
+#from Steering import SteerParams
 from pygame.locals import K_RETURN, K_KP_ENTER, K_ESCAPE, KMOD_CTRL, K_q, K_r
 
 
@@ -13,12 +13,13 @@ class DynamicMapping:
     Handles the dynamic configuration and mapping of joystick controls.
     """
 
-    def __init__(self, world, joysticks, joystick_capabilities):
+    def __init__(self, world, joysticks, joystick_capabilities, map_keys = None):
         self.world = world
         self._joysticks = joysticks
         self._joystick_capabilities = joystick_capabilities
         self.mapped_controls = {}
         self.JOYSTICK_MAPPING_FILE = "joystick_mappings.json"
+        self._map_keys = map_keys
 
     def run_configuration(self):
         """
@@ -82,17 +83,21 @@ class DynamicMapping:
         pygame.event.clear()  # Clear event queue to avoid stale events
         while time.time() - start_time < timeout_seconds:
             for event in pygame.event.get():
+                # Handle Keyboard
                 if event.type == pygame.KEYDOWN:
                     if event.key == K_ESCAPE:
-                        pygame.time.wait(1000)
-                        return None
+                        return None # Don't reuse
                     elif event.key in [K_RETURN, K_KP_ENTER]:
-                        pygame.time.wait(1000)
-                        return loaded_mappings
-                    elif event.key == K_q and (pygame.key.get_mods() & KMOD_CTRL):
-                        pygame.quit()
-                        sys.exit()
-        return loaded_mappings  # Default to using loaded mappings on timeout
+                        return loaded_mappings # Reuse
+
+                # Handle Mapped Joystick Buttons
+                elif event.type == pygame.JOYBUTTONDOWN:
+                    if (event.instance_id == self._map_keys.get('Escape', {}).get('joy_id') and
+                        event.button == self._map_keys.get('Escape', {}).get('button_id')):
+                        return None # Don't reuse
+                    elif (event.instance_id == self._map_keys.get('Enter', {}).get('joy_id') and
+                        event.button == self._map_keys.get('Enter', {}).get('button_id')):
+                        return loaded_mappings # Reuse
 
     def _load_mappings_from_file(self):
         """Loads joystick mappings from a JSON file."""
@@ -166,8 +171,8 @@ class DynamicMapping:
         detected_font = (pygame.font.Font(font_path, 36) if font_path else pygame.font.Font(None, 36))
 
         # --- Corrected Positioning for Multi-Monitor ---
-        main_screen_offset_x = surface.get_width() // 2
-        single_screen_width = surface.get_width() // 2
+        main_screen_offset_x = surface.get_width() // 4
+        single_screen_width = surface.get_width() // 4
         center_x = main_screen_offset_x + (single_screen_width / 2)
 
         # --- Render and Blit all text elements, centered on the main screen ---
@@ -253,8 +258,27 @@ class DynamicMapping:
                             except pygame.error:
                                 pass
                         return final_val
-                    if event.key == pygame.K_ESCAPE:
+                    if event.key == K_ESCAPE:
                         return "REDO_AXIS_DETECTION"
+                elif event.type == pygame.JOYBUTTONDOWN:
+                    if (event.instance_id == self.mapped_controls.get('UI_RESTART', {}).get('joy_id') and
+                        event.button == self.mapped_controls.get('UI_RESTART', {}).get('button_id')):
+                        return "RESTART_CONFIG"                    
+                    if (event.instance_id == self._map_keys.get('Enter', {}).get('joy_id') and
+                        event.button == self._map_keys.get('Enter', {}).get('button_id')):
+                        # This logic is copied from the KEYDOWN Enter check
+                        final_val = 0.0
+                        if (joy_idx_internal < len(self._joysticks) and self._joysticks[joy_idx_internal]):
+                            try:
+                                final_val = self._joysticks[joy_idx_internal].get_axis(axis_idx)
+                            except pygame.error:
+                                pass
+                        return final_val
+                    
+                    elif (event.instance_id == self._map_keys.get('Escape', {}).get('joy_id') and
+                        event.button == self._map_keys.get('Escape', {}).get('button_id')):
+                        return "REDO_AXIS_DETECTION" # Treat mapped Escape as "go back"
+            pygame.display.flip()
             pygame.time.wait(10)
         return None
 
@@ -327,6 +351,13 @@ class DynamicMapping:
                             return None
                         if event.key == K_r:
                             return "RESTART_CONFIG"
+                    elif event.type == pygame.JOYBUTTONDOWN:
+                        if (event.instance_id == self._map_keys.get('Escape', {}).get('joy_id') and
+                            event.button == self._map_keys.get('Escape', {}).get('button_id')):
+                            return None # Skip this control
+                    elif (event.instance_id == self.mapped_controls.get('UI_RESTART', {}).get('joy_id') and
+                          event.button == self.mapped_controls.get('UI_RESTART', {}).get('button_id')):
+                        return "RESTART_CONFIG"
 
                     if event.type == pygame.JOYAXISMOTION:
                         joy_id_event = event.instance_id
@@ -464,12 +495,14 @@ class DynamicMapping:
                 sub_instr,
                 detected_value_str,
             )
-            pygame.display.flip()  # Ensure display is updated in the loop
+            pygame.display.flip()
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     pygame.quit()
                     sys.exit()
+
+                # --- Handle Keyboard Input ---
                 if event.type == pygame.KEYDOWN:
                     if event.key == K_ESCAPE:
                         return None
@@ -513,7 +546,59 @@ class DynamicMapping:
                                     "raw_calibrated_max": axis_steer_data["max"],
                                     "raw_calibrated_center": axis_steer_data["center"],
                                 }
+                
+                # --- Handle Mapped Joystick UI Buttons ---
+                elif event.type == pygame.JOYBUTTONDOWN:
+                    # Check for mapped Enter button
+                    if (event.instance_id == self._map_keys.get('Enter', {}).get('joy_id') and
+                        event.button == self._map_keys.get('Enter', {}).get('button_id')):
+                        
+                        if (input_type_expected == "axis_steer" and axis_steer_data["moved_significantly"]):
+                            current_joy_idx, current_axis_idx = (
+                                axis_steer_data["joy_idx"],
+                                axis_steer_data["axis_idx"],
+                            )
+                            if (
+                                current_joy_idx is not None
+                                and current_axis_idx is not None
+                                and 0 <= current_joy_idx < len(self._joysticks)
+                                and self._joysticks[current_joy_idx]
+                            ):
+                                try:
+                                    axis_steer_data["center"] = self._joysticks[
+                                        current_joy_idx
+                                    ].get_axis(current_axis_idx)
+                                except pygame.error:
+                                    continue
+                                self._display_mapping_message(
+                                    surface,
+                                    font,
+                                    f"{action_prompt_name.upper()} MAPPED!",
+                                    f"Min: {axis_steer_data['min']:.2f}, Max: {axis_steer_data['max']:.2f}, Center: {axis_steer_data['center']:.2f}",
+                                    "OK!",
+                                )
+                                pygame.time.wait(1000)
+                                return {
+                                    "type": "axis_steer",
+                                    "joy_idx": current_joy_idx,
+                                    "id": current_axis_idx,
+                                    "raw_calibrated_min": axis_steer_data["min"],
+                                    "raw_calibrated_max": axis_steer_data["max"],
+                                    "raw_calibrated_center": axis_steer_data["center"],
+                                }
 
+                    # Check for mapped Restart button
+                    elif (event.instance_id == self.mapped_controls.get('UI_RESTART', {}).get('joy_id') and
+                          event.button == self.mapped_controls.get('UI_RESTART', {}).get('button_id')):
+                        return "RESTART_CONFIG"
+                    
+                    # Check for mapped Escape button
+                    elif (event.instance_id == self._map_keys.get('Escape', {}).get('joy_id') and
+                          event.button == self._map_keys.get('Escape', {}).get('button_id')):
+                        return None               
+                # --- CORRECTED LOGIC: Prioritize mapping events over skip events ---
+
+                # 1. Check if the event is the one we are actively trying to map
                 if (
                     input_type_expected == "axis_steer"
                     and event.type == pygame.JOYAXISMOTION
@@ -567,7 +652,7 @@ class DynamicMapping:
                         axis_steer_data["max"] = max(
                             axis_steer_data["max"], current_val
                         )
-                    pygame.display.flip()  # Update display on axis motion
+                    pygame.display.flip()
 
                 elif (
                     input_type_expected == "button"
@@ -598,6 +683,12 @@ class DynamicMapping:
                         "joy_idx": internal_joy_idx,
                         "id": button_idx,
                     }
+                
+                # 2. If it wasn't a mapping event, check if it was the mapped Skip button
+                elif event.type == pygame.JOYBUTTONDOWN:
+                    if (event.instance_id == self._map_keys.get('Escape', {}).get('joy_id') and
+                        event.button == self._map_keys.get('Escape', {}).get('button_id')):
+                        return None # Skip with joystick
 
             pygame.time.wait(10)
         return None
@@ -608,6 +699,8 @@ class DynamicMapping:
             {"id": "STEERING", "type": "axis_steer", "prompt": "Steering"},
             {"id": "THROTTLE", "type": "axis_pedal", "prompt": "Throttle Pedal"},
             {"id": "BRAKE", "type": "axis_pedal", "prompt": "Brake Pedal"},
+            {"id": "HELP","type":"button","prompt":"Show Help Menu"},
+            {"id": "PARK","type":"button","prompt":"Park Button"},
             {"id": "REVERSE", "type": "button", "prompt": "Reverse Gear Button"},
             {"id": "HANDBRAKE", "type": "button", "prompt": "Handbrake Button"},
             {
@@ -625,6 +718,8 @@ class DynamicMapping:
             {"id": "BLINKER_LEFT", "type": "button", "prompt": "Left Blinker"},
             {"id": "BLINKER_RIGHT", "type": "button", "prompt": "Right Blinker"},
             {"id": "HAZARD", "type": "button", "prompt": "Hazard Lights"},
+            {"id": "NEXT_WEATHER","type": "button","prompt":"Next Weather Setting"},
+            {"id": "NEXT_WEATHER_REVERSE","type": "button","prompt":"Previous Weather Setting"},
         ]
         self._display_mapping_message(
             surface,
@@ -647,8 +742,16 @@ class DynamicMapping:
                         return
                     if event.key in [K_RETURN, K_KP_ENTER]:
                         wait_start = False
-            pygame.time.wait(10)
 
+                elif event.type == pygame.JOYBUTTONDOWN:
+                    if (event.instance_id == self._map_keys.get('Escape', {}).get('joy_id') and
+                        event.button == self._map_keys.get('Escape', {}).get('button_id')):
+                        return # Skip entire setup
+                    elif (event.instance_id == self._map_keys.get('Enter', {}).get('joy_id') and
+                        event.button == self._map_keys.get('Enter', {}).get('button_id')):
+                        wait_start = False
+                    
+            pygame.time.wait(10)
         # This outer loop allows restarting the whole process
         while True:
             self.mapped_controls.clear()  # Start fresh
