@@ -10,6 +10,8 @@ import Sensors
 import queue
 import threading
 from VisionPerception import Perception
+from EventManager import EventManager
+from Helpers import EndScreen, PersistentWarningManager, BlinkingAlert, HelpText
 
 # ==============================================================================
 # -- Notes ---------------------------------------------------------------------
@@ -21,381 +23,6 @@ It assumes the OS is in "Extended Desktop" mode and the Pygame window spans
 both monitors.
 *
 """
-
-
-# ==============================================================================
-# -- Event Manager Class (For Visual Notifications) ----------------------------
-# ==============================================================================
-class EventManager(object):
-    """Manages the state and cooldown of VISUAL notifications to prevent spam."""
-
-    def __init__(self, hud_instance):
-        self.hud = hud_instance
-        self.active_events = {}
-        self.event_cooldowns = {
-            "collision": 3.0,
-            "lane_violation": 2.0,
-            "SIGNALLED": 2.0,
-            "UNSIGNALLED": 2.0,
-            "UNSAFE": 3.0,
-            "speeding": 5.0,
-        }
-        self.collision_distance_threshold = 5.0  # Meters
-
-    def report(self, event_type, details=None):
-        """Sensors report events here. The manager decides if a new VISUAL notification is needed."""
-        details = details or {}
-        if event_type in self.active_events:
-            return
-
-        self.active_events[event_type] = {"time": time.time()}
-
-        message, color = (
-            details.get("message", "Event"),
-            details.get("color", (255, 255, 0)),
-        )
-        is_critical = details.get("is_critical", False)
-        sound_to_play = details.get("sound")
-
-        if event_type == "collision":
-            message, is_critical, sound_to_play = "COLLISION!", True, "collision"
-
-        self.hud.notification(
-            message, seconds=3.0, text_color=color, is_critical_center=is_critical
-        )
-
-        if sound_to_play:
-            force = event_type == "collision"
-            self.hud.play_sound_for_event(sound_to_play, force_play=force)
-
-    def tick(self):
-        current_time = time.time()
-        events_to_remove = [
-            k
-            for k, v in self.active_events.items()
-            if current_time > v["time"] + self.event_cooldowns.get(k, 2.0)
-        ]
-        for k in events_to_remove:
-            if k in self.active_events:
-                del self.active_events[k]
-
-
-# ==============================================================================
-# -- Other UI Classes (EndScreen, BlinkingAlert, etc.) -------------------------
-# ==============================================================================
-
-class EndScreen(object):
-    def __init__(self, display_surface, final_scores: dict, hud_fonts: dict):
-        self.surface = display_surface
-        self.dim = display_surface.get_size()
-        self.final_scores = final_scores
-        self.fonts = hud_fonts  # Use the fonts passed from the main HUD
-        self._background_surface = None
-        self._height = self.dim[1]
-
-        # Define colors
-        self.title_color = (220, 38, 38)
-        self.score_color = (252, 211, 77)
-        self.text_color = (229, 231, 235)
-        self.button_color = (55, 65, 81)
-        self.button_hover_color = (75, 85, 99)
-        self.button_text_color = (255, 255, 255)
-
-        # --- Corrected Positioning for Multi-Monitor ---
-        main_screen_offset_x = self.dim[0] // 4
-        single_screen_width = self.dim[0] // 4
-        center_x = main_screen_offset_x + (single_screen_width / 2)
-        
-        button_w, button_h = 350, 60
-        button_y_start = self._height * 0.75
-        button_spacing = button_h + 20
-
-        self.buttons = {
-            "restart": pygame.Rect(center_x - button_w / 2, button_y_start, button_w, button_h),
-            "exit": pygame.Rect(center_x - button_w / 2, button_y_start + button_spacing, button_w, button_h),
-        }
-        self.button_labels = {"restart": "Restart Simulation", "exit": "Exit to Desktop"}
-
-    def draw(self):
-        # Draw the background gradient
-        if not self._background_surface or self._background_surface.get_size() != self.dim:
-            self._background_surface = pygame.Surface(self.dim)
-            top_color, bottom_color = (44, 62, 80), (27, 38, 49)
-            for y in range(self._height):
-                r = top_color[0] + (bottom_color[0] - top_color[0]) * y // self._height
-                g = top_color[1] + (bottom_color[1] - top_color[1]) * y // self._height
-                b = top_color[2] + (bottom_color[2] - top_color[2]) * y // self._height
-                pygame.draw.line(self._background_surface, (r, g, b), (0, y), (self.dim[0], y))
-        self.surface.blit(self._background_surface, (0, 0))
-
-        # --- Positioning for Multi-Monitor ---
-        main_screen_offset_x = self.dim[0] // 4
-        single_screen_width = self.dim[0] // 4
-        center_x = main_screen_offset_x + (single_screen_width / 2)
-
-        # Draw the main title, using the correct font key
-        height_ratio = self._height/2160
-        title_font = self.fonts.get("main_score", pygame.font.Font(None, math.floor(82*height_ratio)))
-        title_surf = title_font.render("SESSION ENDED", True, self.title_color)
-        title_rect = title_surf.get_rect(center=(center_x, self._height * 0.25))
-        self.surface.blit(title_surf, title_rect)
-        
-        # --- Draw Final Scores using corrected font keys ---
-        # CORRECTED: Mapped to the actual keys in the self.fonts dictionary
-        score_index_font = self.fonts.get('title', pygame.font.Font(None, math.floor(40*height_ratio)))
-        score_label_font = self.fonts.get('sub_label', pygame.font.Font(None, math.floor(24*height_ratio)))
-        score_value_font = self.fonts.get('sub_value', pygame.font.Font(None, math.floor(32*height_ratio)))
-        
-        score_area_width = single_screen_width * 0.6
-        score_area_x_start = center_x - (score_area_width / 2)
-        y_pos = self._height * 0.30
-
-        for key, value in self.final_scores.items():
-            if key.startswith('spacer'):
-                y_pos += 20
-                continue
-
-            # Format label text (your custom logic is preserved)
-            if key == 'index_mbi_0_1':
-                label_text = 'Overall Vehicle Control & Collisions'
-            elif key == 'index_lmi_0_1':
-                label_text = 'Overall Lane Management Score'
-            else:
-                label_text = key.replace('_', ' ').replace(' raw', '').title()
-            
-            # Format value text (your custom logic is preserved)
-            value_text = ""
-            if value is not None and value != 'None':
-                try: value_text = f"{float(value):.1f}"
-                except (ValueError, TypeError): value_text = str(value)
-
-            is_index = 'index' in key
-            label_surf = (score_index_font if is_index else score_label_font).render(label_text, True, self.text_color)
-            value_surf = (score_value_font if is_index else score_value_font).render(value_text, True, self.score_color)
-
-            self.surface.blit(label_surf, (score_area_x_start, y_pos))
-            self.surface.blit(value_surf, (score_area_x_start + score_area_width - value_surf.get_width(), y_pos))
-            y_pos += value_surf.get_height() + (15 if is_index else 10)
-
-        # Draw buttons
-        mouse_pos = pygame.mouse.get_pos()
-        button_font = self.fonts.get("sub_value", pygame.font.Font(None, 32))
-        for key, rect in self.buttons.items():
-            color = self.button_hover_color if rect.collidepoint(mouse_pos) else self.button_color
-            pygame.draw.rect(self.surface, color, rect, border_radius=12)
-            label_surf = button_font.render(self.button_labels[key], True, self.button_text_color)
-            label_rect = label_surf.get_rect(center=rect.center)
-            self.surface.blit(label_surf, label_rect)
-
-        pygame.display.flip()
-
-    def run(self, mapped_keys=None):
-        map_keys = mapped_keys
-        logging.info("EndScreen is now active, waiting for user input.")
-        while True:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    return "exit"
-                if event.type == pygame.KEYDOWN:
-                    # --- Re-integrated Keyboard Shortcuts ---
-                    if event.key == pygame.K_r:
-                        return "restart"
-                    if event.key == pygame.K_ESCAPE or \
-                       ((event.key == pygame.K_q or event.key == pygame.K_c) and (pygame.key.get_mods() & pygame.KMOD_CTRL)):
-                        return "exit"
-                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    for key, rect in self.buttons.items():
-                        if rect.collidepoint(event.pos):
-                            return key
-                if event.type == pygame.JOYBUTTONDOWN:
-                    if (map_keys and event.instance_id == map_keys.get('Escape', {}).get('joy_id') and
-                        event.button == map_keys.get('Escape', {}).get('button_id')):
-                        return "exit"
-                    
-                    # Check if the pressed button is the mapped ENTER button (acts as Restart)
-                    elif (map_keys and event.instance_id == map_keys.get('Enter', {}).get('joy_id') and
-                          event.button == map_keys.get('Enter', {}).get('button_id')):
-                        return "restart"                    
-            self.draw()
-
-
-class PersistentWarningManager(object):
-    def __init__(self, font_object, dim):
-        self.font = font_object
-        self.screen_dim = dim
-        self.active_warnings = {}
-
-    def add_warning(self, key, text):
-        self.active_warnings[key] = text.upper()
-
-    def remove_warning(self, key):
-        if key in self.active_warnings:
-            del self.active_warnings[key]
-
-    def get_warnings(self):
-        return list(self.active_warnings.values())
-
-    def render(self, display, panel_rect, start_y):
-        if not self.active_warnings:
-            return
-        y_offset = start_y
-        for text in self.active_warnings.values():
-            symbol_font = pygame.font.Font(pygame.font.get_default_font(), 18)
-            symbol_texture = symbol_font.render("⚠", True, (255, 255, 0))
-            text_texture = self.font.render(text, True, (255, 255, 200))
-            padding = 8
-            box_height = text_texture.get_height() + padding
-            content_width = text_texture.get_width() + symbol_texture.get_width() + 5
-            box_width = content_width + padding * 2
-            surface = pygame.Surface((box_width, box_height), pygame.SRCALPHA)
-            surface.fill((80, 80, 0, 180), surface.get_rect())
-            surface.blit(
-                symbol_texture,
-                (padding, (box_height - symbol_texture.get_height()) // 2),
-            )
-            surface.blit(
-                text_texture,
-                (
-                    padding + symbol_texture.get_width() + 5,
-                    (box_height - text_texture.get_height()) // 2,
-                ),
-            )
-            box_x = panel_rect.x + (panel_rect.width - box_width) / 2
-            display.blit(surface, (box_x, y_offset))
-            y_offset += box_height + 5
-
-
-class BlinkingAlert(object):
-    def __init__(self, font, screen_dim):
-        self.font, self.screen_dim = font, screen_dim
-        self.surface = pygame.Surface((0, 0), pygame.SRCALPHA)
-        self.current_pos, self.seconds_left = [0, 0], 0
-        (
-            self.start_time,
-            self.duration,
-            self.text,
-            self.is_blinking,
-            self.is_critical_center,
-        ) = 0.0, 0.0, "", False, False
-
-    def set_text(
-        self,
-        text,
-        text_color=(255, 255, 255),
-        seconds=2.0,
-        is_blinking=False,
-        is_critical_center=False,
-    ):
-        (
-            self.text,
-            self.seconds_left,
-            self.duration,
-            self.is_blinking,
-            self.is_critical_center,
-        ) = text, seconds, seconds or 0.001, is_blinking, is_critical_center
-        self.start_time = pygame.time.get_ticks() / 1000.0
-        text_surf = self.font.render(
-            text.upper() if is_critical_center or is_blinking else text,
-            True,
-            text_color,
-        )
-        pad_h, pad_v = (20, 15) if is_critical_center else (15, 10)
-        box_h = text_surf.get_height() + 2 * pad_v
-        box_w = text_surf.get_width() + 2 * pad_h
-        self.surface = pygame.Surface((box_w, box_h), pygame.SRCALPHA)
-        self.surface.fill((20, 20, 20, 180))
-        self.surface.blit(
-            text_surf,
-            ((box_w - text_surf.get_width()) / 2, (box_h - text_surf.get_height()) / 2),
-        )
-
-        # --- FIX: Calculate position relative to the main (right) screen ---
-        main_screen_offset_x = self.screen_dim[0] // 4
-        single_screen_width = self.screen_dim[0] // 4
-        center_x_on_main_screen = (
-            main_screen_offset_x + (single_screen_width - box_w) / 2
-        )
-
-        self.initial_pos = (
-            [center_x_on_main_screen, int(self.screen_dim[1] * 0.4) - box_h / 2]
-            if is_critical_center
-            else [center_x_on_main_screen, self.screen_dim[1]]
-        )
-        self.current_pos = list(self.initial_pos)
-
-    def tick(self, clock):
-        self.seconds_left = max(0.0, self.seconds_left - clock.get_time() * 1e-3)
-        if self.seconds_left > 0:
-            elapsed = (pygame.time.get_ticks() / 1000.0) - self.start_time
-            alpha = (
-                int(abs(math.sin(elapsed * math.pi * 3.0)) * 255)
-                if self.is_blinking
-                else int(255 * (self.seconds_left / self.duration))
-            )
-            self.surface.set_alpha(alpha)
-        else:
-            self.surface.set_alpha(0)
-        return self.seconds_left > 0
-
-    def render(self, display):
-        if self.surface.get_alpha() > 0:
-            display.blit(self.surface, self.current_pos)
-
-
-class HelpText(object):
-    def __init__(self, font, width, height):
-        lines = [
-            "SIMULATION CONTROLS:",
-            "TAB: Change Camera",
-            "H: Toggle Help",
-            "A: Toggle Autopilot",
-            "N: Next Weather Setting",
-            "SHIFT+N: Previous Weather Setting",
-            "TAB: Cycle (Camera) View",
-            "BACKSPACE: Respawn in New Location",
-            "CTRL+BACKSPACE: Respawn and Reset Scores in New Location",
-            "",
-            "CAR ACCESSORY CONTROLS",
-            "Z: Left Blinker",
-            "X: Right Blinker",
-            "SHIFT+Z: Hazard Blinkers",
-            "",
-            "TRANSMISSION CONTROL:",
-            "Q: Toggle Gear: Reverse",
-            "P: Toggle Gear: Park",
-            "SPACE: Handbrake",
-            "M: Change Transmission Type",
-            ". (PERIOD) : GEAR UP",
-            ", (COMMA) : GEAR DOWN",
-            "",                        
-            "ESC, CTRL+C, CTRL+Q: Quit",
-
-        ]
-        self.font, self.dim, self._render = font, (width, height), False
-        max_w = max(self.font.size(l)[0] for l in lines) if lines else 0
-        surf_w, surf_h = (
-            min(max_w + 44, int(width * 0.8)),
-            min(len(lines) * self.font.get_linesize() + 24, int(height * 0.8)),
-        )
-        self.pos = (width / 2.5 - surf_w / 2.5, height / 2 - surf_h / 2)
-        self.surface = pygame.Surface((surf_w, surf_h), pygame.SRCALPHA)
-        pygame.draw.rect(
-            self.surface, (0, 0, 0, 200), self.surface.get_rect(), border_radius=15
-        )
-        y = 18
-        for line in lines:
-            if y + self.font.get_linesize() > surf_h - 12:
-                break
-            self.surface.blit(self.font.render(line, True, (255, 255, 255)), (22, y))
-            y += self.font.get_linesize()
-
-    def toggle(self):
-        self._render = not self._render
-
-    def render(self, display):
-        if self._render:
-            display.blit(self.surface, self.pos)
-
 
 class HUD(object):
     def __init__(self, width, height, args):
@@ -468,6 +95,7 @@ class HUD(object):
                 "solid_line_crossing": 2.0,
                 "speeding": 5.0,
                 "error": 1.0,
+                'PROXIMITY_ALERT': 3.0
             },
         )
         self._last_sound_time = {k: 0.0 for k in self.sound_cooldowns}
@@ -477,6 +105,8 @@ class HUD(object):
             "solid_line_crossing": "./audio/alerts/solid_line_sound.wav",
             "speeding": "./audio/alerts/speed_violation_sound.wav",
             "error": "./audio/alerts/error_encountered_sound.wav",
+            "PROXIMITY_ALERT": ":./audio/alerts/imminent_warning.wav",
+            "pedestrian_warning":":./audio/alerts/pedestrian_proximity.wav",
         }
         for k, v in sound_files.items():
             if os.path.exists(v):
@@ -513,10 +143,10 @@ class HUD(object):
         self.panel_fonts = {  # NEW
             'title': self._get_font(28, bold=True),      # NEW
             'main_score': self._get_font(64, bold=True), # NEW
-            'sub_label': self._get_font(18),             # NEW
-            'sub_value': self._get_font(18, bold=True),  # NEW
+            'sub_label': self._get_font(24),             # NEW
+            'sub_value': self._get_font(24, bold=True),  # NEW
             'large_val': self._get_font(48, bold=True),  # NEW
-            'small_label': self._get_font(16),           # NEW
+            'small_label': self._get_font(24),           # NEW
             'critical_center': self._get_font(48)
         }
 
@@ -540,8 +170,102 @@ class HUD(object):
             except Exception as e:
                 logging.error(f"[VisionDemo] Failed to open writer: {e}")
                 self._vision_writer = None
+        
+        # Object distance thresholds for notifications
+        self.distance_alerts = {"warning": 20.0,"critical":7.5 }
+        # Increase sensitivity for pedestrians
+        self.pedestrian_multiplier = 1.40
+        # time-to-collision
+        self.ttc_alert_s = 2.0
+        # min approach speed
+        self.approach_min_mps = 0.5
 
+        #per-object alert gating
+        self._prox_state = {}
+        self._prox_realert_s = 2.0
+        self._prox_hysteresis_m = 1.0
     
+    def _thresholds_for(self, cls: str):
+        warn = float(self.distance_alerts["warning"])
+        crit = float(self.distance_alerts["critical"])
+        if cls == "pedestrian":
+            warn *= self.pedestrian_multiplier
+            crit *= self.pedestrian_multiplier
+        return warn, crit
+
+    def _zone_for(self, cls: str, dist: float | None, ttc: float | None):
+        warn, crit = self._thresholds_for(cls)
+        # TTC wins if approaching fast
+        if ttc is not None and ttc <= self.ttc_alert_s:
+            return "critical"
+        if dist is None:
+            return "none"
+        return "critical" if dist <= crit else ("warning" if dist <= warn else "none")
+
+    def _object_key(self, o: dict):
+        # Prefer stable id (CARLA actor id / tracker id); fallback to class+rounded center
+        k = o.get("track_id")
+        if k is not None:
+            return f"obj:{k}"
+        bb = o.get("bbox_xyxy")
+        if bb:
+            cx = int(0.5 * (bb[0] + bb[2]) / 16)  # coarse bins to keep keys stable-ish
+            cy = int(0.5 * (bb[1] + bb[3]) / 16)
+            return f"{o.get('cls','obj')}:{cx}:{cy}"
+        return f"{o.get('cls','obj')}:na"
+
+    def _gate_and_notify(self, o: dict, severity: str, dist: float | None, ttc: float | None):
+        """Fire center notification only on zone transitions with cooldown + hysteresis."""
+        import time as _time
+        cls = o.get("cls", "object")
+        key = self._object_key(o)
+
+        # per-frame dedupe (set at top of render loop)
+        if hasattr(self, "_seen_frame"):
+            if key in self._seen_frame:
+                return
+            self._seen_frame.add(key)
+
+        zone_now = self._zone_for(cls, dist, ttc)
+        key = self._object_key(o)
+        st = self._prox_state.get(key, {"zone": "none", "last_alert_t": 0.0})
+        zone_prev, last_t = st["zone"], float(st["last_alert_t"])
+
+        # Hysteresis: require stepping past thresholds + hysteresis to de-escalate
+        warn, crit = self._thresholds_for(cls)
+        if dist is not None:
+            if zone_prev == "critical" and dist <= (crit + self._prox_hysteresis_m):
+                zone_now = "critical"
+            elif zone_prev == "warning" and dist <= (warn + self._prox_hysteresis_m):
+                zone_now = max(zone_now, "warning", key=("none","warning","critical").index)
+
+        now = _time.time()
+        escalate = (("none","warning","critical").index(zone_now) >
+                    ("none","warning","critical").index(zone_prev))
+        changed  = (zone_now != zone_prev)
+
+        # Only alert when we enter warning/critical OR escalate (warn->critical), and observe cooldown
+        if zone_now in ("warning","critical") and (changed or escalate) and (now - last_t >= self._prox_realert_s):
+            # Build message and call EventManager
+            msg = f"{zone_now.upper()}: {cls}"
+            if dist is not None:
+                msg += f" {dist:.1f}m"
+            if ttc is not None:
+                msg += f" (TTC {ttc:.1f}s)"
+            try:
+                self.event_manager.report("PROXIMITY_ALERT", {
+                    "message": msg,
+                    "severity": zone_now,
+                    "center": True  # legacy center banner
+                })
+            except Exception:
+                pass
+            st["last_alert_t"] = now
+
+        # Save state
+        st["zone"] = zone_now
+        self._prox_state[key] = st
+
     def _get_font(self, size: int, bold: bool = False):  # NEW
         key = (self._carla_font_path or 'default', size, bold)  # NEW
         if key in self._font_cache:  # NEW
@@ -566,6 +290,105 @@ class HUD(object):
         t_surf = font.render(str(text), True, color)
         surf.blit(t_surf, (x, y))
         return y + t_surf.get_height() + spacing
+
+    def _thresholds_for(self, cls: str):
+        """Return (warn_m, crit_m) possibly adjusted per class."""
+        warn = float(self.distance_alerts["warning"])
+        crit = float(self.distance_alerts["critical"])
+        if cls == "pedestrian":
+            warn *= self.pedestrian_multiplier
+            crit *= self.pedestrian_multiplier
+        return warn, crit
+
+    def compute_bbox_style(self, o: dict):
+        """
+        Decide color/severity for a detection dict `o` from Perception.compute().
+        Returns (color_rgb, severity_str, label_text, ttc_s_or_None)
+        severity_str in {"none","warning","critical"}.
+        """
+        # base label (you may already set o['label'] in VisionPerception)
+        base = o.get("label") or f"{o.get('cls','obj')} {o.get('distance_m',0.0):0.0}m {o.get('rel_speed_mps',0.0):+0.0f}m/s"
+
+        dist = o.get("distance_m")
+        relv = o.get("rel_speed_mps")  # signed along LOS; negative ≈ approaching
+        cls  = o.get("cls") or "vehicle"
+
+        warn, crit = self._thresholds_for(cls)
+
+        # TTC (if approaching fast enough)
+        ttc = None
+        if dist is not None and relv is not None and relv < -self.approach_min_mps:
+            ttc = dist / (-relv) if dist > 0 else None
+
+        # severity by TTC then distance
+        severity = "none"
+        color = (0, 255, 0)  # green = safe
+        if ttc is not None and ttc <= self.ttc_alert_s:
+            severity = "critical"; color = (255, 0, 0)
+            base += f"  TTC {ttc:.1f}s"
+        elif dist is not None:
+            if dist <= crit:
+                severity = "critical"; color = (255, 0, 0)
+            elif dist <= warn:
+                severity = "warning"; color = (255, 255, 0)
+
+        # nicer label color: match box color for quick scanning
+        return color, severity, base, ttc
+    
+    def _maybe_notify_proximity(self, o: dict, severity: str, dist: float, ttc: float | None):
+        """
+        Fire your existing EventManager notification with cooldowns.
+        Keep the payload simple so it fits your current handler.
+        """
+        if severity == "none" or not hasattr(self, "event_manager"):
+            return
+        cls = o.get("cls", "object")
+        msg = f"{severity.upper()}: {cls} at {dist:.1f}m"
+        if ttc is not None:
+            msg += f" (TTC {ttc:.1f}s)"
+        try:
+            # your EventManager already de-bounces; we include severity for styling
+            self.event_manager.report("PROXIMITY_ALERT", {
+                "message": msg,
+                "severity": severity,
+                "_is_critical_center": True,
+                "center":True
+            })
+        except Exception:
+            pass
+    
+    def bbox_blit(self, surf, o: dict, font):
+        bb = o.get("bbox_xyxy")
+        if not bb:
+            return
+        x1, y1, x2, y2 = map(int, bb)
+
+        # compute label + severity + color (you can keep your own logic here)
+        dist = o.get("distance_m")
+        relv = o.get("rel_speed_mps")
+        cls  = o.get("cls", "vehicle")
+        # TTC
+        ttc = None
+        if dist is not None and relv is not None and relv < -self.approach_min_mps:
+            ttc = dist / (-relv) if dist > 0 else None
+
+        # severity from zone
+        zone = self._zone_for(cls, dist, ttc)
+        if zone == "critical":
+            color = (255, 0, 0)
+        elif zone == "warning":
+            color = (255, 255, 0)
+        else:
+            color = (0, 255, 0)
+
+        # draw
+        import pygame
+        pygame.draw.rect(surf, color, pygame.Rect(x1, y1, x2 - x1, y2 - y1), 2)
+        label = o.get("label") or f"{cls} {dist:.1f}m {relv:+.1f}m/s" if dist is not None and relv is not None else (o.get("label") or cls)
+        surf.blit(font.render(label, True, color), (x1, max(0, y1 - 18)))
+
+        # alert (center legacy) — gated
+        self._gate_and_notify(o, zone, dist, ttc)
 
 
     def _render_sub_labels(self, surf, x, y, sub_dict, panel_x, panel_w, padding):
@@ -957,25 +780,26 @@ class HUD(object):
 
                 # Right (overlay)
                 right_surf = left_surf.copy()
-                if self.perception:
-                    # Ensure perception is using the correct camera for this view
-                    cam_actor = cm.get_camera_actor_for_queue('main')
+                if getattr(self, 'perception', None):
+                    cam_actor = cm.get_camera_actor_for_queue('main') or cm.sensors.get('left_dash_cam')
                     if cam_actor:
                         self.perception.set_camera(cam_actor)
-                    
                     objs = self.perception.compute(max_objects=24, include_2d=True)
-                    font = self.panel_fonts.get('small_label', pygame.font.Font(None, 16))
-                    for o in objs:
-                        bb = o.get("bbox_xyxy")
-                        if not bb:
-                            continue
-                        x1, y1, x2, y2 = map(int, bb)
-                        pygame.draw.rect(right_surf, (0, 255, 0), pygame.Rect(x1, y1, x2 - x1, y2 - y1), 2)
-                        label = f"{o['cls']}  {o['distance_m']:.1f}m  {o['rel_speed_mps']:+.1f}m/s"
-                        txt = font.render(label, True, (255, 255, 255))
-                        right_surf.blit(txt, (x1, max(0, y1 - 18)))
-                
-                display.blit(right_surf, (W, 0))
+
+                    if objs:
+                        font = self.panel_fonts.get('small_label', pygame.font.Font(None, 16))
+                        px_w = getattr(self.perception, 'image_width', right_surf.get_width()) or right_surf.get_width()
+                        px_h = getattr(self.perception, 'image_height', right_surf.get_height()) or right_surf.get_height()
+                        sx = right_surf.get_width()  / float(px_w)
+                        sy = right_surf.get_height() / float(px_h)
+
+                        for o in objs:
+                            bb = o.get("bbox_xyxy")
+                            if not bb:
+                                continue
+                            x1 = int(bb[0] * sx); y1 = int(bb[1] * sy)
+                            x2 = int(bb[2] * sx); y2 = int(bb[3] * sy)
+                            self.bbox_blit(right_surf, {**o, "bbox_xyxy": [x1, y1, x2, y2]}, font)
 
                 if self._vision_writer is not None:
                     try:
@@ -985,17 +809,19 @@ class HUD(object):
                     except Exception as e:
                         logging.error(f"[VisionDemo] frame write failed: {e}")
         
-        # Panoramic camera views + overlays
         elif hasattr(self, 'world') and self.world and self.world.player and self.world.camera_manager:
             cm = self.world.camera_manager
-            W = cm.single_monitor_dim[0]
+            W, H = cm.single_monitor_dim
 
             panels = [
-                ('left_side_cam', 0),
-                ('left_dash_cam', W),
+                ('left_side_cam',  0 * W),
+                ('left_dash_cam',  1 * W),
                 ('right_dash_cam', 2 * W),
                 ('right_side_cam', 3 * W),
             ]
+
+            # seen-per-frame guard so the same actor spotted by multiple cams doesn’t spam
+            self._seen_frame = set()
 
             for name, xoff in panels:
                 cam_actor = cm.sensors.get(name)
@@ -1008,31 +834,41 @@ class HUD(object):
                 except Exception:
                     queue_key = 'main'
 
-                arr = cm.get_latest_array(queue_key) 
-                
+                arr = cm.get_latest_array(queue_key)
+
+                # Build surface (camera-native) → scale once to tile size
                 if arr is None:
-                    surf = pygame.Surface(cm.single_monitor_dim).convert()
+                    surf = pygame.Surface((W, H)).convert()
                     surf.fill((10, 10, 10))
                 else:
-                    surf = pygame.surfarray.make_surface(arr.swapaxes(0, 1)).convert()
+                    native = pygame.surfarray.make_surface(arr.swapaxes(0, 1)).convert()
+                    surf = pygame.transform.smoothscale(native, (W, H)) if native.get_size() != (W, H) else native
 
-                # Vision overlay (vehicles/pedestrians)
+                # ---- Vision overlay ON THIS TILE ----
                 if getattr(self, 'perception', None):
+                    # use this tile’s camera for pose/FOV so boxes align
                     self.perception.set_camera(cam_actor)
-                    
                     objs = self.perception.compute(max_objects=24, include_2d=True)
-                    font = self.panel_fonts.get('small_label', pygame.font.Font(None, 18))
-                    for o in objs:
-                        bb = o.get("bbox_xyxy")
-                        if not bb:
-                            continue
-                        x1, y1, x2, y2 = map(int, bb)
-                        pygame.draw.rect(surf, (0, 255, 0), (x1, y1, x2 - x1, y2 - y1), 2)
-                        label = f"{o['cls']} {o['distance_m']:.1f}m {o['rel_speed_mps']:+.1f}m/s"
-                        surf.blit(font.render(label, True, (255, 255, 255)), (x1, max(0, y1 - 18)))
-                logging.info(f"[Vision] objs={len(self.perception.compute(max_objects=24, include_2d=False))}")
-                display.blit(surf, (xoff, 0))
 
+                    if objs:
+                        font = self.panel_fonts.get('small_label', pygame.font.Font(None, 16))
+                        # scale bboxes if the perception intrinsics != surf size
+                        px_w = getattr(self.perception, 'image_width', surf.get_width()) or surf.get_width()
+                        px_h = getattr(self.perception, 'image_height', surf.get_height()) or surf.get_height()
+                        sx = surf.get_width()  / float(px_w)
+                        sy = surf.get_height() / float(px_h)
+
+                        for o in objs:
+                            bb = o.get("bbox_xyxy")
+                            if not bb:
+                                continue
+                            x1 = int(bb[0] * sx); y1 = int(bb[1] * sy)
+                            x2 = int(bb[2] * sx); y2 = int(bb[3] * sy)
+                            # draw + (gated) notify on this tile
+                            self.bbox_blit(surf, {**o, "bbox_xyxy": [x1, y1, x2, y2]}, font)
+
+                # Blit the (possibly annotated) tile
+                display.blit(surf, (xoff, 0))
         # --- 2) Render the HUD panel, notifications, etc. (This code now runs always) ---
         if self._show_info and getattr(self, '_info_text', None):
             # Layout across 4 screens
@@ -1137,64 +973,81 @@ class CameraManager(object):
         self.hud = hud
         self.dim = hud.get_dim()
         self.single_monitor_dim = (self.dim[0] // 4, self.dim[1])
-        
+        self.world = parent_actor.get_world()                          # [ADD]
+
         # --- Threading and Queue Setup ---
         self.array_lock = threading.Lock()
         self.stop_threads = threading.Event()
         self.threads = []
-        self.image_queues = { 'main': queue.Queue(maxsize=1), 'left_side': queue.Queue(maxsize=1), 'right_dash': queue.Queue(maxsize=1), 'right_side': queue.Queue(maxsize=1), 'rearview': queue.Queue(maxsize=1) }
+        self.image_queues = {
+            'main': queue.Queue(maxsize=1),
+            'left_side': queue.Queue(maxsize=1),
+            'right_dash': queue.Queue(maxsize=1),
+            'right_side': queue.Queue(maxsize=1),
+            'rearview': queue.Queue(maxsize=1)
+        }
         self.processed_arrays = {k: None for k in self.image_queues}
-        
-        # --- Get the vehicle-specific configuration ---
-        self.config = self._get_vehicle_camera_config()
+
+        # --- Get vehicle-specific configuration ---
+        self.config = self._get_vehicle_camera_config()                # [KEEP]
         self.view_sets = self.config['view_sets']
-        self.view_index = 0
-        self.rearview_res_w= self.config['rearview_setup'].get('rearview_res_w')
-        self.rearview_res_h= self.config['rearview_setup'].get('rearview_res_h')
+        self.view_index = 0                                            # [FIX] unify on view_index
 
-        self.vehicle_dict = {}
+        self.rearview_res_w = self.config['rearview_setup'].get('rearview_res_w')
+        self.rearview_res_h = self.config['rearview_setup'].get('rearview_res_h')
 
-        # --- Create All Panoramic Cameras from the Initial View Set ---
-        bp_library = parent_actor.get_world().get_blueprint_library()
-        self.sensors = {}
-        initial_view_set = self.view_sets[self.view_index] # Get the 'Driver' view set
-        
+        # --- Storage for sensors & seg maps ---
+        self.sensors = {}                                              # [MOVE UP] used immediately below
+        self.seg_sensors = {}                                          # [ADD]
+        self.seg_tags = {}                                             # [ADD] name -> uint8 [H,W]
+        self.seg_inst = {}                                             # [ADD] name -> uint16 [H,W]
+
+        # --- Build camera name ↔ queue maps (from config) ---
+        self.name_to_queue = {n: s['queue'] for n, s in self.config['panoramic_setup'].items()}
+        self.queue_to_name = {}
+        for n, q in self.name_to_queue.items():
+            self.queue_to_name.setdefault(q, n)
+
+        # --- Panoramic RGB spawn (single loop) + optional SEG attach per camera ---
+        bp_library = self.world.get_blueprint_library()
+        initial_view_set = self.view_sets[self.view_index]
+
         for name, settings in self.config['panoramic_setup'].items():
+            # RGB
             cam_bp = bp_library.find("sensor.camera.rgb")
             cam_bp.set_attribute("image_size_x", str(self.single_monitor_dim[0]))
             cam_bp.set_attribute("image_size_y", str(self.single_monitor_dim[1]))
             cam_bp.set_attribute("fov", str(settings['fov']))
 
-            
-            ## -- Modifying post-processing for individual cameras to improve performance. -- ##
-
+            # minor perf tweak for side cams
             if 'side' in name:
-                cam_bp.set_attribute("enable_postprocess_effects",'false')
-            
-            #
-            #cam_bp.set_attribute("enable_postprocess_effects",'false')
-            
-            ## ----   END MODIFICATIONS ---------------#                                   -- ##
+                cam_bp.set_attribute("enable_postprocess_effects", "false")
 
-            # Spawn the camera with its specific transform for the initial view
-            camera_actor = self._parent.get_world().spawn_actor(
-                cam_bp,
-                initial_view_set[name], # Get the transform from the view set
-                attach_to=self._parent # Attach DIRECTLY to the vehicle
-            )
-            
+            xform = initial_view_set[name]
+            rgb = self.world.spawn_actor(cam_bp, xform, attach_to=self._parent)
+            self.sensors[name] = rgb
+
             queue_key = settings['queue']
-            camera_actor.listen(lambda image, key=queue_key: self._add_to_queue(key, image))
-            self.sensors[name] = camera_actor
+            rgb.listen(lambda image, key=queue_key: self._add_to_queue(key, image))
             self.threads.append(threading.Thread(target=self._image_processor, args=(queue_key,)))
-        
-        # Map camera names to their target queue ("main", "left_side", etc.)
-        self.name_to_queue = {name: s['queue'] for name, s in self.config['panoramic_setup'].items()}
-        self.queue_to_name = {}
-        for n, q in self.name_to_queue.items():
-            self.queue_to_name.setdefault(q, n)    
-        
-        # --- Rearview Camera Setup ---
+
+            # SEG (optional, matched intrinsics so pixels align 1:1 with RGB)
+            if settings.get("seg", False):
+                seg_bp = bp_library.find("sensor.camera.semantic_segmentation")
+                seg_bp.set_attribute("image_size_x", str(self.single_monitor_dim[0]))
+                seg_bp.set_attribute("image_size_y", str(self.single_monitor_dim[1]))
+                seg_bp.set_attribute("fov", str(settings['fov']))
+                tick = float(settings.get("seg_tick", 0.0))
+                if tick > 0.0:
+                    seg_bp.set_attribute("sensor_tick", str(tick))
+
+                seg = self.world.spawn_actor(seg_bp, xform, attach_to=self._parent)
+                self.seg_sensors[name] = seg
+
+                # capture current name to avoid late-binding
+                seg.listen(lambda img, _n=name: self._on_seg_image(_n, img))
+
+        # --- Rearview Camera (single block; remove duplicate) ---
         self.rearview_cam = None
         rear_config = self.config.get('rearview_setup')
         if rear_config:
@@ -1202,29 +1055,31 @@ class CameraManager(object):
             rear_bp.set_attribute("image_size_x", str(rear_config['rearview_res_w']))
             rear_bp.set_attribute("image_size_y", str(rear_config['rearview_res_h']))
             rear_bp.set_attribute("fov", str(rear_config['fov']))
-            rear_bp.set_attribute("enable_postprocess_effects",'false')
-            self.rearview_cam = self._parent.get_world().spawn_actor(rear_bp, rear_config['transform'], attach_to=self._parent)
+            rear_bp.set_attribute("enable_postprocess_effects", "false")
+            self.rearview_cam = self.world.spawn_actor(rear_bp, rear_config['transform'], attach_to=self._parent)
             self.rearview_cam.listen(lambda image: self._add_to_queue('rearview', image))
             self.threads.append(threading.Thread(target=self._image_processor, args=('rearview',)))
 
         # --- Start all threads ---
-        
-        # --- Rearview Camera Setup ---
-        self.rearview_cam = None
-        rear_config = self.config.get('rearview_setup')
-        if rear_config:
-            rear_bp = bp_library.find("sensor.camera.rgb")
-            rear_bp.set_attribute("image_size_x", str(rear_config['rearview_res_w']))
-            # CORRECTED LINE: Changed the second image_size_x to image_size_y
-            rear_bp.set_attribute("image_size_y", str(rear_config['rearview_res_h']))
-            rear_bp.set_attribute("fov", str(rear_config['fov']))
-            self.rearview_cam = self._parent.get_world().spawn_actor(rear_bp, rear_config['transform'], attach_to=self._parent)
-            self.rearview_cam.listen(lambda image: self._add_to_queue('rearview', image))
-            self.threads.append(threading.Thread(target=self._image_processor, args=('rearview',)))
         for t in self.threads:
             t.daemon = True
             t.start()
-    
+
+    # SEG callback + accessor
+    def _on_seg_image(self, cam_name: str, image):
+        import numpy as np
+        h, w = int(image.height), int(image.width)
+        buf = np.frombuffer(image.raw_data, np.uint8).reshape(h, w, 4)
+        tags = buf[:, :, 2].copy()                                              # R = semantic tag id
+        inst = (buf[:, :, 1].astype(np.uint16) << 8) | buf[:, :, 0].astype(np.uint16)  # (G<<8)|B
+        with self.array_lock:
+            self.seg_tags[cam_name] = tags
+            self.seg_inst[cam_name] = inst
+
+    def get_seg_maps(self, cam_name: str):
+        with self.array_lock:
+            return self.seg_tags.get(cam_name), self.seg_inst.get(cam_name)
+
     def _get_vehicle_camera_config(self):
         screen_width_inches = 96.6
         vehicle_width_inches = 79.3
@@ -1246,9 +1101,6 @@ class CameraManager(object):
             driver_loc_z = bounding_box.location.z + (extent.z*0.33)
         
         logging.info(f'DRIVER LOCATION: X: {driver_loc_x}, Y:{driver_loc_y}, Z:{driver_loc_z}')
-        passenger_loc_x = bounding_box.location.x + (extent.x*0.47)
-        passenger_loc_y = bounding_box.location.y + (extent.y*-0.45)
-        passenger_loc_z = bounding_box.location.z + (extent.z*0.38)
 
         central_location = carla.Location(x=driver_loc_x, y=driver_loc_y,z=driver_loc_z)
 
@@ -1369,10 +1221,37 @@ class CameraManager(object):
                 }
             }
         }
-        return VEHICLE_CONFIGS.get(self._actor_model, VEHICLE_CONFIGS['default'])
+        
+        cfg = VEHICLE_CONFIGS.get(self._actor_model, VEHICLE_CONFIGS['default'])   # [FIX] no 'vehicle_id' here
 
+        # [ADD] augment panoramic entries with seg defaults + per-camera tag policy
+        for cam_name, cam_cfg in cfg['panoramic_setup'].items():
+            cam_cfg.setdefault('seg', True)                 # enable seg for this camera
+            cam_cfg.setdefault('seg_tick', 0.066)           # ~15 FPS; 0.0 means full rate
+            cam_cfg.setdefault('seg_tags_include', [        # names or ids; empty list = allow all
+                "person", "rider", "bicycle", "motorcycle", "car", "truck", "bus"
+            ])
+            cam_cfg.setdefault('seg_tags_exclude', [])
 
+        return cfg
 
+    
+    def _on_seg_image(self,cam_name:str,image):
+        try:
+            h,w = int(image.height), int(image.width)
+            buf = np.frombuffer(image.raw_data, dtype = np.uint8).reshape(h,w,4)
+            tags = buf[:,:,2].copy()  # Semantic tag_id
+            inst = (buf[:,:,1].astype(np.uint16) << 8) | buf[:,:,0].astype(np.uint16)
+            with self.array_lock:
+                self.seg_tags[cam_name] = tags
+                self.seg_inst[cam_name] = inst
+        except Exception as e:
+            logging.error(f"[Seg] parse fail for {cam_name}: {e}")
+    
+    def get_set_maps(self,cam_name:str):
+        with self.array_lock:
+            return self.seg_tags.get(cam_name),self.seg_inst.get(cam_name)
+        
     def _add_to_queue(self, queue_key, image):
         if self.image_queues[queue_key].full():
             try:
@@ -1453,6 +1332,7 @@ class CameraManager(object):
             )
         except Exception as e:
             logging.error(f"Failed to spawn rearview camera: {e}")
+
 
     def render(self, display):
         with self.array_lock:

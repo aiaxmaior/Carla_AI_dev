@@ -3,13 +3,18 @@ import sys
 import os
 import logging
 from VehicleLibrary import VehicleLibrary
+from VehicleLibrary import MapLibrary
 
 class TitleScreen(object):
     
-    def __init__ (self, display,args):
+    def __init__ (self, display,client,args):
         self._display = display
+        self._client = client
+        self._H = self._display.get_height()
+        self._W = self._display.get_width()
         self._args = args
         self._default_id = 'ford_e450_super_duty'
+        self.center_x = None
 
         font_path = os.path.join(
             self._args.carla_root, "CarlaUE4", "Content", "Carla", "Fonts",
@@ -32,7 +37,7 @@ class TitleScreen(object):
             self._font_credits = pygame.font.Font(None, 28)
             self._font_prompt = pygame.font.Font(None, 60)
 
-    def select_vehicle_config(self, persistent_keys, center_x, default_id="ford_e450_super_duty"):
+    def select_vehicle_config(self, persistent_keys, center_x, logo_img, default_id="ford_e450_super_duty"):
         default_carla_blueprint = 'vehicle.mercedes.sprinter'
         lib = VehicleLibrary()
         items = lib.list_display_items()   # [{'id': ..., 'name': ...}, ...]
@@ -127,6 +132,144 @@ class TitleScreen(object):
                     elif dy == -1:
                         sel = (sel + 1) % len(names); hat_cooldown = 5
 
+
+    def select_map(self, persistent_keys, center_x, logo_img, default_id="Town10HD_Opt"):
+        """
+        Title screen map picker that reads from CARLA's registry.
+        - Shows pretty names (e.g., 'Town10 HD Opt')
+        - Returns a canonical id like 'Town10HD_Opt' suitable for client.load_world(...)
+        """
+        import re
+
+        # --- helpers ---
+        def _basename(asset: str) -> str:
+            # "/Game/Carla/Maps/Town10HD_Opt" -> "Town10HD_Opt"
+            return asset.rsplit("/", 1)[-1] if asset else ""
+
+        def _prettify(mid: str) -> str:
+            # "Town10HD_Opt" -> "Town10 HD Opt"
+            s = mid.replace("_", " ")
+            s = s.replace("HD", " HD")
+            return s
+
+        def _canon(s: str) -> str:
+            # Accept full asset, id-only, or sloppy casing -> normalize to canonical id
+            if not s:
+                return ""
+            base = _basename(s)  # if already id, stays the same
+            return base  # keep original casing; CARLA expects exact id like Town10HD_Opt
+
+        def _natural_key(s: str):
+            # Natural sort so Town2 < Town10
+            return [int(t) if t.isdigit() else t.lower() for t in re.split(r'(\d+)', s)]
+
+        def _is_mapped_press(ev, mapping):
+            return (
+                ev is not None and
+                ev.type == pygame.JOYBUTTONDOWN and
+                mapping and
+                mapping.get("joy_id") is not None and
+                mapping.get("button_id") is not None and
+                # pygame sends instance_id on some builds; fall back to ev.joy if missing
+                (mapping.get("joy_id") == getattr(ev, "instance_id", getattr(ev, "joy", None))) and
+                (mapping.get("button_id") == getattr(ev, "button", None))
+            )
+
+        # --- gather and prepare items ---
+        assets = list(self._client.get_available_maps() or [])
+        if not assets:
+            logging.warning("No maps reported by CARLA; using default id.")
+            return _canon(default_id) or "Town01"
+
+        # Make unique (just in case), convert to ids, and sort
+        ids = sorted({_basename(a) for a in assets}, key=_natural_key)
+        names = [_prettify(mid) for mid in ids]
+
+        # Select default (case-insensitive match on id or asset)
+        default_canon = _canon(default_id)
+        try:
+            sel = ids.index(default_canon)
+        except ValueError:
+            # try case-insensitive fallback
+            lowered = [x.lower() for x in ids]
+            try:
+                sel = lowered.index(default_canon.lower())
+            except ValueError:
+                sel = 0
+
+        # --- input mappings ---
+        map_up     = persistent_keys.get("Up")
+        map_down   = persistent_keys.get("Down")
+        map_enter  = persistent_keys.get("Enter")
+        map_escape = persistent_keys.get("Escape")
+
+        clock = pygame.time.Clock()
+        hat_cooldown = 0
+
+        while True:
+            clock.tick(60)
+            if hat_cooldown:
+                hat_cooldown -= 1
+
+            # --- render ---
+            self._display.fill((24, 28, 34))
+            if logo_img:
+                self._display.blit(logo_img, logo_img.get_rect(center=(center_x, int(self._H * 0.24))))
+
+            title = self._font_title.render("Select Map", True, (200, 220, 255))
+            self._display.blit(title, title.get_rect(center=(center_x, int(self._H * 0.14))))
+
+            # windowed list around selection
+            start = max(0, sel - 5)
+            end   = min(len(names), start + 11)
+            y = int(self._H * 0.45)
+            for i in range(start, end):
+                pick  = (i == sel)
+                color = (255, 255, 255) if pick else (180, 190, 200)
+                text  = ("> " if pick else "  ") + names[i]
+                surf  = self._font_subtitle.render(text, True, color)
+                self._display.blit(surf, surf.get_rect(center=(center_x, y)))
+                y += int(self._font_subtitle.get_height() * 1.25)
+
+            hint = "Wheel: Up/Down • Enter to select • Esc to cancel"
+            hint_surf = self._font_subtitle.render(hint, True, (160, 170, 180))
+            self._display.blit(hint_surf, hint_surf.get_rect(center=(center_x, int(self._H * 0.92))))
+            pygame.display.flip()
+
+            # --- events ---
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return ids[sel] if ids else (_canon(default_id) or "Town01")
+
+                # mapped joystick buttons
+                if _is_mapped_press(event, map_up):
+                    sel = (sel - 1) % len(names); continue
+                if _is_mapped_press(event, map_down):
+                    sel = (sel + 1) % len(names); continue
+                if _is_mapped_press(event, map_enter):
+                    return ids[sel]
+                if _is_mapped_press(event, map_escape):
+                    return _canon(default_id) or ids[sel]
+
+                # keyboard fallback
+                if event.type == pygame.KEYDOWN:
+                    if event.key in (pygame.K_UP, pygame.K_w):
+                        sel = (sel - 1) % len(names)
+                    elif event.key in (pygame.K_DOWN, pygame.K_s):
+                        sel = (sel + 1) % len(names)
+                    elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                        return ids[sel]
+                    elif event.key in (pygame.K_ESCAPE, pygame.K_BACKSPACE):
+                        return _canon(default_id) or ids[sel]
+
+                # D-pad hat
+                if event.type == pygame.JOYHATMOTION and hat_cooldown == 0:
+                    _, dy = event.value
+                    if dy == 1:
+                        sel = (sel - 1) % len(names); hat_cooldown = 5
+                    elif dy == -1:
+                        sel = (sel + 1) % len(names); hat_cooldown = 5
+
     def show_title_screen(self):
         """
         Title screen: welcome -> map Enter -> map Escape -> select vehicle -> continue.
@@ -156,6 +299,7 @@ class TitleScreen(object):
         main_screen_offset_x = self._display.get_width() // 4
         single_screen_width = self._display.get_width() // 4
         center_x = main_screen_offset_x + (single_screen_width / 2)
+        self.center_x = center_x
 
         title_surf = self._font_title.render("Safety Simulator", True, title_color)
         subtitle_surf = self._font_subtitle.render("", True, subtitle_color)
@@ -168,6 +312,7 @@ class TitleScreen(object):
         prompt_surf_down   = self._font_prompt.render("Press a WHEEL Button to Map [DOWN]", True, prompt_color)
         prompt_surf_escape  = self._font_prompt.render("Press a WHEEL Button to Map [ESCAPE]", True, prompt_color)
         prompt_surf_select  = self._font_prompt.render("Select a Vehicle from the Menu…", True, prompt_color)
+        prompt_surf_map = self._font_prompt.render("Please Select a Map...",True, prompt_color)
         prompt_surf_done    = self._font_prompt.render("Mapped! Press any key/button to continue", True, complete_color)
 
         # Init joysticks
@@ -230,19 +375,23 @@ class TitleScreen(object):
                         persistent_keys["Escape"] = {"joy_id": None, "button_id": None}
                         logging.info("Mapped [Escape] to keyboard Return")
                         state = "SELECT_VEHICLE"
-
                 elif state == "DONE":
                     if event.type in (pygame.KEYDOWN, pygame.JOYBUTTONDOWN, pygame.MOUSEBUTTONDOWN):
                         state = "CONTINUE"
 
             # Trigger the selector exactly once when entering SELECT_VEHICLE
             if state == "SELECT_VEHICLE":
-                chosen_vehicle_id, carla_blueprint = self.select_vehicle_config(persistent_keys,center_x,default_id="ford_e450_super_duty")
+                chosen_vehicle_id, carla_blueprint = self.select_vehicle_config(persistent_keys,center_x, logo_img, default_id="ford_e450_super_duty")
                 logging.info(f"Vehicle config selected: {chosen_vehicle_id}")
-                state = "DONE"
+                state = "SELECT_MAP"
                 # skip drawing the title frame this iteration; next frame will draw DONE prompt
                 continue
-
+            if state == "SELECT_MAP":
+                chosen_map_id = self.select_map(persistent_keys,center_x, logo_img, default_id ="Town10HD")
+                logging.info(f"Map Chosen: {chosen_map_id}")
+                state = "DONE"
+                continue
+            
             # --- Draw (every frame, not only on events) ---
             # Gradient bg
             H = self._display.get_height(); W = self._display.get_width()
@@ -282,6 +431,7 @@ class TitleScreen(object):
 
         if not chosen_vehicle_id:
             chosen_vehicle_id = "ford_e450_super_duty"
-
-        logging.info("UI Button mapping complete.")
-        return persistent_keys, chosen_vehicle_id, carla_blueprint
+        if not chosen_map_id:
+            chosen_map_id = "Town10HD_opt"
+        logging.info("Title mapping & choice customization complete.")
+        return persistent_keys, chosen_vehicle_id, carla_blueprint, chosen_map_id

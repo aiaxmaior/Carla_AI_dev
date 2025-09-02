@@ -11,7 +11,7 @@ class Perception:
       - Returns per-object: id, class, distance (m), relative LoS speed (m/s), bbox_xyxy.
     """
 
-    def __init__(self, world_obj, image_width=1280, image_height=720,
+    def __init__(self, world_obj, image_width=1920, image_height=1080,
                  fov_deg=None, camera_actor=None):
         self.world_obj = world_obj
         self.world = world_obj.world

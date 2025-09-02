@@ -68,37 +68,6 @@ def game_loop(args, client, joystick_mappings=None):
     try:
         # --- MODIFIED: Map Loading Logic ---
         # This now handles both standard maps and custom .xodr maps
-        if args.xodr_path:
-            if os.path.exists(args.xodr_path):
-                with open(args.xodr_path, encoding='utf-8') as od_file:
-                    data = od_file.read()
-                logging.info(f"Loading map from OpenDRIVE file: {os.path.basename(args.xodr_path)}")
-                # Parameters for procedural generation
-                params = carla.OpendriveGenerationParameters(
-                    vertex_distance=15.0,
-                    max_road_length=500.0,
-                    wall_height=1.0,
-                    additional_width=0.6,
-                    smooth_junctions=False,
-                    enable_mesh_visibility=False
-                )
-                carla_world = client.generate_opendrive_world(data, params)
-            else:
-                logging.error(f"XODR file not found at: {args.xodr_path}")
-                return "exit", joystick_mappings # Exit if file not found
-        else:
-            logging.info(f"Loading standard map: {args.map}")
-            carla_world = client.load_world(args.map)
-        
-        original_settings = carla_world.get_settings()
-        # --- End of Map Loading Logic ---
-
-        if args.sync:
-            settings = carla_world.get_settings()
-            settings.synchronous_mode = True
-            settings.fixed_delta_seconds = 0.05
-            carla_world.apply_settings(settings)
-            logging.info("SYNCHRONOUS MODE applied successfully")
 
         # Multi-monitor setup for panoramic view
         single_monitor_width, single_monitor_height = args.width, args.height
@@ -125,9 +94,45 @@ def game_loop(args, client, joystick_mappings=None):
         )
 
         #persistent_keys = show_title_screen(display, args)
-        title= TitleScreen(display,args)
-        persistent_keys, chosen_vehicle_id, carla_blueprint = title.show_title_screen()
+        title= TitleScreen(display,client,args)
+        persistent_keys, chosen_vehicle_id, carla_blueprint, chosen_map_id = title.show_title_screen()
  
+        if args.xodr_path:
+            if os.path.exists(args.xodr_path):
+                with open(args.xodr_path, encoding='utf-8') as od_file:
+                    data = od_file.read()
+                logging.info(f"Loading map from OpenDRIVE file: {os.path.basename(args.xodr_path)}")
+                # Parameters for procedural generation
+                params = carla.OpendriveGenerationParameters(
+                    vertex_distance=15.0,
+                    max_road_length=500.0,
+                    wall_height=1.0,
+                    additional_width=0.6,
+                    smooth_junctions=False,
+                    enable_mesh_visibility=False
+                )
+                carla_world = client.generate_opendrive_world(data, params)
+            else:
+                logging.error(f"XODR file not found at: {args.xodr_path}")
+                return "exit", joystick_mappings # Exit if file not found
+        else:
+            if chosen_map_id:
+                logging.info(f"Loading chosen map: {chosen_map_id}")
+                carla_world = client.load_world(chosen_map_id)
+            else:
+                logging.info(f"No chosen map returned, loading default from cmdline: {args.map}")
+                carla_world = client.load_world(args.map)
+        
+        original_settings = carla_world.get_settings()
+        # --- End of Map Loading Logic ---
+
+        if args.sync:
+            settings = carla_world.get_settings()
+            settings.synchronous_mode = True
+            settings.fixed_delta_seconds = 0.05
+            carla_world.apply_settings(settings)
+            logging.info("SYNCHRONOUS MODE applied successfully")
+
         # Object Initialization
         hud = HUD(total_width, total_height, args)
         world_obj = World(

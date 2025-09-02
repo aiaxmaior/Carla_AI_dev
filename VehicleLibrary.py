@@ -165,3 +165,38 @@ class VehicleLibrary:
     def load(self, id_or_path: str) -> VehicleConfig:
         raw = self._load_raw(id_or_path)
         return VehicleConfig.from_dict(raw)
+
+class MapLibrary:
+
+    def __init__(self, search_paths: Optional[List[str]] = None):
+        if search_paths:
+            self._paths=search_paths
+        else:
+            self._paths = "./CarlaUE4/Content/Carla/Maps"
+        
+    def list_display_items(self) -> List[Dict[str, str]]:
+        """
+        Returns a de-duplicated list of {'id': <primary id>, 'name': <display name or id>}
+        sorted by display name (case-insensitive). Each config file appears once,
+        even if it has many aliases.
+        """
+        items: List[Dict[str, str]] = []
+        seen_paths = set()
+
+        # unique JSON paths (avoid duplicates from aliases)
+        for path in sorted(set(self._index.values())):
+            if path in seen_paths:
+                continue
+            seen_paths.add(path)
+            try:
+                with open(path, "r") as f:
+                    data = json.load(f)
+                vid = str(data["id"])
+                name = data.get("display_name") or vid
+                c_bp = str(data["carla_blueprint"])
+                items.append({"id": vid, "name": name, "carla_blueprint":c_bp})
+            except Exception:
+                continue
+
+    def _build_index(self):
+        return 
