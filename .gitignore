@@ -1,0 +1,262 @@
+# ====================================================================
+# Q-DRIVE Alpha .gitignore
+# Strategy: Ignore everything by default, then whitelist what to track
+# ====================================================================
+
+# ====================================================================
+# STEP 1: Ignore EVERYTHING first
+# ====================================================================
+/*
+
+# ====================================================================
+# STEP 2: Whitelist - Directories to TRACK
+# ====================================================================
+
+# Core system directories
+!/Core/
+!/temp/
+!/custom_assets/
+!/Tools/
+!/Utility/
+!/images/
+# Also track configs (important for deployment)
+!/configs/
+
+# NOTE: images/ and jetson/ are EXCLUDED by default due to large files
+# See below for how to whitelist specific files from these directories
+
+# ====================================================================
+# STEP 3: Whitelist - Main directory scripts to TRACK
+# ====================================================================
+
+# Primary entry points
+!/Main.py
+!/PreWelcomeSelect.py
+
+# Core functional scripts
+!/DataConsolidator.py
+!/DataIngestion.py
+!/ScenarioManager.py
+!/ScenarioLibrary.py
+!/PredictiveManager.py
+!/PredictiveIndices.py
+!/EventManager.py
+!/DynamicMonitor.py
+!/Helpers.py
+!/HUD.py
+!/input_utils.py
+!/monitor_config.py
+
+# Controls and mapping
+!/controls_queue_s.py
+!/dynamic_mapping.py
+
+# Migration/setup scripts
+!/automated_migration_script.py
+!/dir_setup.sh
+
+# ====================================================================
+# STEP 4: Whitelist - Configuration and documentation files
+# ====================================================================
+
+# Git files
+!.gitignore
+!.gitattributes
+!README.md
+!LICENSE
+
+# Project documentation (if in root)
+!*.md
+
+# Requirements and setup
+!requirements.txt
+!setup.py
+!pyproject.toml
+!environment.yml
+
+# Docker
+!Dockerfile
+!docker-compose.yml
+!.dockerignore
+
+# ====================================================================
+# STEP 5: EXCLUDE - Things to ignore even in whitelisted directories
+# ====================================================================
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+.hypothesis/
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Logs and databases
+*.log
+*.sqlite
+*.db
+*.sql
+
+# Session data and outputs
+Session_logs/
+_out/
+*.pkl
+*.pickle
+*.npy
+*.npz
+
+# Large binary files
+*.ckpt
+*.pth
+*.pt
+*.h5
+*.pb
+*.onnx
+*.tflite
+*.bin
+*.safetensors
+
+# CARLA specific
+CarlaUE4/
+Engine/
+Plugins/
+*.umap
+*.uasset
+Carla_recorder_logs/
+
+# Backup and temp files
+*backup*
+*Backup*
+*.backup
+*.bak
+*_old
+*_OLD
+*.tmp
+*.temp
+*~
+.*.swp
+
+# Archives
+Main_archive*/
+Backups/
+backup/
+old/
+
+# Research and documentation (if you don't want to track)
+Research/
+Documentation/
+
+# Scenario runner (external dependency)
+scenario_runner*/
+
+# Test folders
+test_folder/
+TEST-*/
+
+# Maps and large assets (track selectively)
+HDMaps/
+# If you need specific maps, use: !HDMaps/specific_map.xodr
+
+# Audio/TTS (usually large files)
+audio/
+TTS/
+
+# LLM related (can be large)
+LLM/
+llm_client/
+
+# PythonAPI (CARLA dependency, not your code)
+PythonAPI/
+
+# Co-Simulation (if external)
+Co-Simulation/
+
+# QDrive (if this is generated or external)
+QDrive/
+jetson/
+# Misc
+misc/
+
+# ====================================================================
+# SPECIAL CASES - Uncomment if needed
+# ====================================================================
+
+# If you want to track specific files in ignored directories:
+# !HDMaps/my_custom_map.xodr
+# !Documentation/IMPORTANT_DOC.md
+
+# If you want to ignore specific files in tracked directories:
+# Core/Vision/old_version.py
+
+# Large data files even in tracked dirs
+**/*.mp4
+**/*.avi
+**/*.mov
+**/*.mkv
+**/*.mp3
+**/*.wav
+**/*.flac
+**/*.zip
+**/*.tar.gz
+**/*.tar
+**/*.rar
+**/*.7z
+
+# Ignore data directories even in tracked folders
+**/data/
+**/datasets/
+**/models/checkpoints/
+**/logs/
+
+# ====================================================================
+# NOTES
+# ====================================================================
+#
+# This .gitignore uses a "whitelist" strategy:
+# 1. Ignore everything with /*
+# 2. Explicitly un-ignore (!pattern) what you want to track
+# 3. Add specific ignores for common unwanted files
+#
+# To see what will be committed: git status
+# To see what's being ignored: git status --ignored
+# To force-add an ignored file: git add -f <file>
+#
+# ====================================================================

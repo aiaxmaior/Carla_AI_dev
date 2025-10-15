@@ -1,0 +1,26 @@
+{
+    "Enter": {
+        "joy_id": 0,
+        "button_id": 37
+    },
+    "Up": {
+        "joy_id": 0,
+        "button_id": 47
+    },
+    "Down": {
+        "joy_id": 0,
+        "button_id": 46
+    },
+    "Left": {
+        "joy_id": 0,
+        "button_id": 21
+    },
+    "Right": {
+        "joy_id": 0,
+        "button_id": 34
+    },
+    "Escape": {
+        "joy_id": 0,
+        "button_id": 36
+    }
+}

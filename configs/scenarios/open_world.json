@@ -1,0 +1,11 @@
+{
+  "id": "open_world",
+  "name": "Open World Assessment",
+  "help": "Free roam with traffic.",
+  "duration_s": 9999.0,
+  "traffic": {
+    "num_vehicles": 20,
+    "num_pedestrians": 0,
+    "tm_global_headway_m": 2.5
+  }
+}

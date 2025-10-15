@@ -1,0 +1,32 @@
+{
+    "ENTER": {
+        "type": "button",
+        "joy_idx": 1,
+        "id": 37
+    },
+    "UP": {
+        "type": "button",
+        "joy_idx": 1,
+        "id": 47
+    },
+    "DOWN": {
+        "type": "button",
+        "joy_idx": 1,
+        "id": 46
+    },
+    "LEFT": {
+        "type": "button",
+        "joy_idx": 1,
+        "id": 21
+    },
+    "RIGHT": {
+        "type": "button",
+        "joy_idx": 1,
+        "id": 34
+    },
+    "ESCAPE": {
+        "type": "button",
+        "joy_idx": 1,
+        "id": 36
+    }
+}

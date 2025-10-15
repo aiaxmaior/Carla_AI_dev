@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0",
+  "id": "mercedes_sprinter_passenger",
+  "display_name":"Commuter: Mercedes Sprinter - 15 Passenger",
+  "carla_blueprint": "vehicle.mercedes.sprinter",
+
+  "mass": 4800.0,
+  "wheelbase": 4.20,
+  "track_front": 1.75,
+  "track_rear": 1.75,
+  "cg_height": 0.92,
+  "front_static_ratio": 0.59,
+
+  "friction_mu": 0.90,
+  "steer_cap_deg": 22.0,
+
+  "Cf_per_tire_front": 60000.0,
+  "Cr_per_tire_rear": 70000.0,
+  "R_min": 7.2,
+  "Iz": 9000.0,
+  "roll_stiff_split": 0.56,
+
+  "Ku_method": "a_over_Cf_minus_b_over_Cr",
+
+  "steer_ratio_lo": 10.0,
+  "steer_ratio_hi": 18.0,
+  "steer_ratio_Vmid": 13.4,
+  "steer_ratio_sharp": 2.2,
+  "deadzone": 0.02,
+  "linear_window": 0.12,
+  "expo": 1.6,
+  "max_rate_per_s": 2.5,
+  "smooth_alpha": 0.25,
+
+  "mu_table": {
+    "asphalt_dry": 0.90,
+    "asphalt_wet": 0.70,
+    "gravel": 0.55,
+    "ice": 0.10
+  },
+
+  "meta": {
+    "units": { "mass": "kg", "lengths": "m", "angles": "deg" },
+    "notes": "Spec-approx. Tune stiffness/Iz as you gather data."
+  }
+}

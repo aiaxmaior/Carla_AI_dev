@@ -1,0 +1,109 @@
+{
+    "STEERING": {
+        "type": "axis_steer",
+        "joy_idx": 0,
+        "id": 0,
+        "raw_calibrated_min": -1.000030518509476,
+        "raw_calibrated_max": 1.0,
+        "raw_calibrated_center": 0.001678466796875
+    },
+    "THROTTLE": {
+        "type": "axis_pedal",
+        "joy_idx": 0,
+        "id": 2,
+        "raw_released_val": -1.0,
+        "raw_pressed_val": 0.999969482421875
+    },
+    "BRAKE": {
+        "type": "axis_pedal",
+        "joy_idx": 0,
+        "id": 5,
+        "raw_released_val": -1.0,
+        "raw_pressed_val": 0.999969482421875
+    },
+    "HELP": {
+        "type": "button",
+        "joy_idx": 0,
+        "id": 35
+    },
+    "PARK": {
+        "type": "button",
+        "joy_idx": 0,
+        "id": 32
+    },
+    "REVERSE": {
+        "type": "button",
+        "joy_idx": 0,
+        "id": 33
+    },
+    "HANDBRAKE": {
+        "type": "button",
+        "joy_idx": 0,
+        "id": 20
+    },
+    "TOGGLE_MANUAL_GEAR": {
+        "type": "button",
+        "joy_idx": 0,
+        "id": 18
+    },
+    "GEAR_UP": {
+        "type": "button",
+        "joy_idx": 0,
+        "id": 45
+    },
+    "GEAR_DOWN": {
+        "type": "button",
+        "joy_idx": 0,
+        "id": 44
+    },
+    "TOGGLE_VIEW": {
+        "type": "button",
+        "joy_idx": 0,
+        "id": 31
+    },
+    "BLINKER_LEFT": {
+        "type": "button",
+        "joy_idx": 1,
+        "id": 4
+    },
+    "BLINKER_LEFT_OFF": {
+        "type": "button",
+        "joy_idx": 1,
+        "id": 4
+    },
+    "BLINKER_RIGHT": {
+        "type": "button",
+        "joy_idx": 1,
+        "id": 5
+    },
+    "BLINKER_RIGHT_OFF": {
+        "type": "button",
+        "joy_idx": 1,
+        "id": 5
+    },
+    "HAZARD": {
+        "type": "button",
+        "joy_idx": 0,
+        "id": 22
+    },
+    "NEXT_WEATHER": {
+        "type": "button",
+        "joy_idx": 0,
+        "id": 23
+    },
+    "NEXT_WEATHER_REVERSE": {
+        "type": "button",
+        "joy_idx": 0,
+        "id": 24
+    },
+    "ENTER": {
+        "type": "button",
+        "joy_idx": 0,
+        "id": 37
+    },
+    "ESCAPE": {
+        "type": "button",
+        "joy_idx": 0,
+        "id": 36
+    }
+}

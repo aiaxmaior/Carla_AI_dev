@@ -1,0 +1,10 @@
+{
+  "id": "lane_mgmt_s1",
+  "name": "Lane Management SC 1",
+  "help": "Hold center; one signaled lane change.",
+  "duration_s": 18.0,
+  "target_change_at_s_range": [6.0, 9.0],
+  "violation_thresholds": {
+    "p_lane_violation_warn": 0.5
+  }
+}

@@ -1,0 +1,11 @@
+numpy == 2.2.6
+math
+logging
+argparse
+pandas
+matplotlib
+pygame
+pygame_widgets
+tensorrt
+tensorrt_llm
+

@@ -1,0 +1,12 @@
+{
+    "ENTER": {
+        "type": "button",
+        "joy_idx": 0,
+        "id": 37
+    },
+    "ESCAPE": {
+        "type": "button",
+        "joy_idx": 0,
+        "id": 36
+    }
+}
