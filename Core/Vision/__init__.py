@@ -72,3 +72,15 @@ try:
 except ImportError:
     pass
 
+__all__ = []
+
+if _vision_perception_available:
+    __all__.append('VisionPerception')
+if _dms_tracking_available:
+    __all__.append(['DMS', 'AlertLevel', 'EyeMetrics', 'DriverState'])
+if _object_tracking_available:
+    __all__.extend(['ObjectTracker', 'TrackedObject'])
+if _lane_detection_available:
+    __all__.extend(['LaneDetector', 'LaneGeometry'])
+if _hazard_analysis_available:
+    __all__.extend(['HazardDetector', 'RiskAssessment'])

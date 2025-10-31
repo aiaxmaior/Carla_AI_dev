@@ -7,21 +7,112 @@ Cross-platform compatilbility with both CARLA simulator and Orin field deploymen
 
 """
 
+import os
+import sys
+import subprocess
+import logging
+
+# ============================
+# GPU ALLOCATION - MUST BE SET BEFORE ANY GPU LIBRARY IMPORTS
+# ============================
+
+gpu_id = 0
+gpu_available = False
+actual_device_id = 0
+
+
+def prompt_gpu_id() -> int:
+    """Prompt user for GPU selection, defaulting to GPU 1 if available, else GPU 0"""
+    gpu_choice = 0
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=index,name", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        gpu_list = []
+        print("\nAvailable GPUs:")
+        for line in result.stdout.strip().split("\n"):
+            if line:
+                idx, name = line.split(", ", 1)
+                gpu_list.append((idx.strip(), name.strip()))
+                print(f"  {idx.strip()}) {name.strip()}")
+
+        # Establish default gpu as 1 if it exists, otherwise 0
+        if len(gpu_list) > 1:
+            default_gpu = 1
+            user_input = input(
+                f"\nSelect GPU ID for DMS (default {default_gpu}): "
+            ).strip()
+            gpu_choice = int(user_input) if user_input else default_gpu
+        else:
+            default_gpu = 0
+            user_input = input(
+                f"\nSelect GPU ID for DMS (default {default_gpu}): "
+            ).strip()
+            gpu_choice = int(user_input) if user_input else default_gpu
+
+        return gpu_choice
+    except Exception as e:
+        logging.warning(f"Could not query GPUs: {e}")
+        print("GPU detection failed, will attempt to use primary GPU (0)")
+        return 0
+
+
+# CRITICAL: Set CUDA_VISIBLE_DEVICES BEFORE importing any GPU libraries
+try:
+    gpu_id = prompt_gpu_id()
+    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+    os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
+    os.environ["TF_GPU_THREAD_MODE"] = "gpu_private"
+    # Suppress TensorFlow/protobuf warnings
+    os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"  # Suppress TF info/warning logs
+
+    gpu_available = True
+    # After setting CUDA_VISIBLE_DEVICES, the selected GPU becomes device 0 in PyTorch/TF
+    # But we keep track of the original GPU ID for display purposes
+    actual_device_id = 0  # This is what PyTorch/TF will see
+    selected_gpu_id = gpu_id  # This is what we selected (for display)
+    logging.info(f"Physical GPU {gpu_id} selected for DMS (mapped to logical device 0 in frameworks)")
+    print(f"GPU Configuration: Using Physical GPU {gpu_id} (CUDA_VISIBLE_DEVICES={gpu_id})")
+except Exception as e:
+    logging.warning(f"GPU setup failed, will use CPU: {e}")
+    gpu_available = False
+    actual_device_id = 0
+    selected_gpu_id = -1  # -1 indicates CPU mode
+
+# NOW it's safe to import GPU libraries (they will only see CUDA_VISIBLE_DEVICES)
 import cv2 as cv
 import numpy as np
 import pandas as pd
-import mediapipe as mp
 import threading
 import queue
 import time
-import logging
-import subprocess
-import os
-import sys
 from dataclasses import dataclass, field
 from typing import Optional, Tuple, List, Dict
 from enum import Enum
 from collections import deque
+
+# Suppress protobuf deprecation warnings (compatibility issue between protobuf 6.x and MediaPipe 0.10.x)
+import warnings
+from io import StringIO
+
+warnings.filterwarnings('ignore', category=DeprecationWarning, module='google.protobuf')
+warnings.filterwarnings('ignore', message='.*GetPrototype.*')
+
+# Capture and suppress stderr during MediaPipe import (protobuf compatibility issue)
+# This suppresses the "AttributeError: 'MessageFactory' object has no attribute 'GetPrototype'" message
+_original_stderr = sys.stderr
+sys.stderr = StringIO()
+
+import mediapipe as mp
+
+# Restore stderr
+sys.stderr = _original_stderr
+
 import torch, torchvision
 
 # MediaPipe landmark indices
@@ -156,75 +247,6 @@ class DriverState:
     head_down_event: bool = False
 
     alert_level: AlertLevel = AlertLevel.NORMAL
-
-
-# ============================
-# GPU ALLOCATION - AUTO-DETECT AND SELECT
-# ============================
-
-gpu_id = 0
-gpu_available = False
-actual_device_id = 0
-
-
-def prompt_gpu_id() -> int:
-    """Prompt user for GPU selection, defaulting to GPU 1 if available, else GPU 0"""
-    gpu_choice = 0
-    try:
-        result = subprocess.run(
-            ["nvidia-smi", "--query-gpu=index,name", "--format=csv,noheader"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-
-        gpu_list = []
-        print("\nAvailable GPUs:")
-        for line in result.stdout.strip().split("\n"):
-            if line:
-                idx, name = line.split(", ", 1)
-                gpu_list.append((idx.strip(), name.strip()))
-                print(f"  {idx.strip()}) {name.strip()}")
-
-        # Establish default gpu as 1 if it exists, otherwise 0
-        if len(gpu_list) > 1:
-            default_gpu = 1
-            user_input = input(
-                f"\nSelect GPU ID for DMS (default {default_gpu}): "
-            ).strip()
-            gpu_choice = int(user_input) if user_input else default_gpu
-        else:
-            default_gpu = 0
-            user_input = input(
-                f"\nSelect GPU ID for DMS (default {default_gpu}): "
-            ).strip()
-            gpu_choice = int(user_input) if user_input else default_gpu
-
-        return gpu_choice
-    except Exception as e:
-        logging.warning(f"Could not query GPUs: {e}")
-        print("GPU detection failed, will attempt to use primary GPU (0)")
-        return 0
-
-
-try:
-    gpu_id = prompt_gpu_id()
-    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
-    os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
-    os.environ["TF_GPU_THREAD_MODE"] = "gpu_private"
-    gpu_available = True
-    # After setting CUDA_VISIBLE_DEVICES, the selected GPU becomes device 0 in PyTorch/TF
-    # But we keep track of the original GPU ID for display purposes
-    actual_device_id = 0  # This is what PyTorch/TF will see
-    selected_gpu_id = gpu_id  # This is what we selected (for display)
-    logging.info(f"Physical GPU {gpu_id} selected for DMS (mapped to logical device 0 in frameworks)")
-    print(f"GPU Configuration: Using Physical GPU {gpu_id} (CUDA_VISIBLE_DEVICES={gpu_id})")
-except Exception as e:
-    logging.warning(f"GPU setup failed, will use CPU: {e}")
-    gpu_available = False
-    actual_device_id = 0
-    selected_gpu_id = -1  # -1 indicates CPU mode
 
 
 class DMS:

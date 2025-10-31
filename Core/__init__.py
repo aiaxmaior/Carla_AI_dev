@@ -36,7 +36,7 @@ except ImportError:
 
 try:
     from .Vision import VisionPerception, DMS_Module
-    __all__.append('VisionPerception','DMS_Module')
+    __all__.extend(['VisionPerception', 'DMS_Module'])
 except ImportError:
     pass
     
