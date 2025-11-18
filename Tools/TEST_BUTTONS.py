@@ -1,3 +1,22 @@
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Test/utility script for joystick button detection (NOT in hot path)
+# [ ] | Hot-path functions: None (standalone test script)
+# [ ] |- Heavy allocs in hot path? N/A
+# [ ] |- pandas/pyarrow/json/disk/net in hot path? No
+# [ ] | Graphics here? YES - pygame (test only)
+# [ ] | Data produced (tick schema?): None (console output only)
+# [ ] | Storage (Parquet/Arrow/CSV/none): None
+# [ ] | Queue/buffer used?: No
+# [ ] | Session-aware? No
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_OK] Test/utility script - NOT in hot path
+# 2. [PERF_OK] pygame operations acceptable for testing
+# 3. [PERF_OK] No performance concerns
+# ============================================================================
+
 import pygame
 import time
 
