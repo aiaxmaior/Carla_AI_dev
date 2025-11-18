@@ -1,4 +1,24 @@
 # VisionPerception.py
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Vision perception - ground-truth object detection & 2D projection
+# [X] | Hot-path functions: compute() called from HUD.render() (4x per frame!)
+# [X] |- Heavy allocs in hot path? YES - queries all actors + projects to 2D
+# [ ] |- pandas/pyarrow/json/disk/net in hot path? No
+# [ ] | Graphics here? No (produces bbox data for HUD)
+# [X] | Data produced (tick schema?): List of object dicts with bbox_xyxy
+# [ ] | Storage (Parquet/Arrow/CSV/none): None
+# [ ] | Queue/buffer used?: No
+# [X] | Session-aware? No
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_HOT] compute() VERY EXPENSIVE - world.get_actors() + matrix math per object
+# 2. [PERF_HOT] Called 4 TIMES PER FRAME (once per camera tile) in HUD
+# 3. [PERF_HOT] No distance culling, no FOV culling - processes ALL actors every call
+# 4. [PERF_SPLIT] CRITICAL: Add culling, caching, or throttle to lower FPS
+# ============================================================================
+
 import math
 import carla
 import logging

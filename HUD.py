@@ -1,3 +1,24 @@
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: HUD rendering, camera management, vision overlay, bounding boxes
+# [X] | Hot-path functions: tick(), render(), bbox_blit(), _image_processor()
+# [X] |- Heavy allocs in hot path? YES - Many temp dicts, font renders, surfaces
+# [X] |- pandas/pyarrow/json/disk/net in hot path? pandas import but minimal use
+# [X] | Graphics here? YES - PRIMARY RENDERER (cameras, overlays, panels)
+# [X] | Data produced (tick schema?): Display state only (no logging)
+# [X] | Storage (Parquet/Arrow/CSV/none): None (pure rendering)
+# [X] | Queue/buffer used?: YES - image_queues for camera frames (threaded)
+# [X] | Session-aware? No - stateless renderer per frame
+# [X] | Debug-only heavy features?: vision_compare mode, recording, logging spam
+# Top 3 perf risks:
+# 1. [PERF_HOT] Vision overlay compute() called for EVERY camera tile EVERY frame (L858, L794)
+# 2. [PERF_HOT] pygame.transform.smoothscale() on large surfaces every frame (L852)
+# 3. [PERF_HOT] Font rendering every frame for dynamic text (no caching of static labels)
+# 4. [PERF_HOT] Logging spam: L1005, L1008 (CRITICAL logs every blinker frame)
+# 5. [PERF_SPLIT] CameraManager spawns 4+ cameras + threads - no resolution/FPS tuning flags
+# ============================================================================
+
 import carla
 import pygame
 import os
@@ -657,6 +678,7 @@ class HUD(object):
         return y
     
 
+    # [PERF_HOT] Called every frame from Main game loop
     def tick(self, world_instance, clock, idling , controller, display_fps):
         """
         Processes actions, states for each frame or "tick" of the simulation.  For the HUD
@@ -764,6 +786,7 @@ class HUD(object):
         for name, parameter in vars(ackermann_settings).items():
             self._info_text[name] = parameter
 
+    # [PERF_HOT] Main rendering function - called every frame
     def render(self, display):
         """
         Renders cameras and the HUD.
@@ -791,6 +814,7 @@ class HUD(object):
                     cam_actor = cm.get_camera_actor_for_queue('main') or cm.sensors.get('left_dash_cam')
                     if cam_actor:
                         self.perception.set_camera(cam_actor)
+                    # [PERF_HOT] Expensive: compute() queries CARLA world actors + projects to 2D
                     objs = self.perception.compute(max_objects=24, include_2d=True)
 
                     if objs:
@@ -849,12 +873,15 @@ class HUD(object):
                     surf.fill((10, 10, 10))
                 else:
                     native = pygame.surfarray.make_surface(arr.swapaxes(0, 1)).convert()
+                    # [PERF_HOT] smoothscale is expensive on large surfaces - consider pre-scaling cameras
                     surf = pygame.transform.smoothscale(native, (W, H)) if native.get_size() != (W, H) else native
 
                 # ---- Vision overlay ON THIS TILE ----
                 if getattr(self, 'perception', None):
-                    # use this tile’s camera for pose/FOV so boxes align
+                    # use this tile's camera for pose/FOV so boxes align
                     self.perception.set_camera(cam_actor)
+                    # [PERF_HOT] CRITICAL: This runs for ALL 4 camera tiles EVERY FRAME!
+                    # Consider: skip side cameras, add distance culling, or throttle to lower FPS
                     objs = self.perception.compute(max_objects=24, include_2d=True)
 
                     if objs:
@@ -1002,9 +1029,11 @@ class HUD(object):
         if self._blinker_state == 1 and self._blinker_left_img:
             display.blit(self._blinker_left_img,
                         self._blinker_left_img.get_rect(center=(left_x, y)))
+            # [PERF_HOT][DEBUG_ONLY] CRITICAL: Logs EVERY frame blinker is on! Remove or gate with --debug
             logging.critical(f"blinker triggered left ⬅️ location: X={left_x},y= {y}")
 
         elif self._blinker_state == 2 and self._blinker_right_img:
+            # [PERF_HOT][DEBUG_ONLY] CRITICAL: Logs EVERY frame blinker is on! Remove or gate with --debug
             logging.critical(f"blinker triggered right ▶️ location: X={right_x},y= {y}")
             display.blit(self._blinker_right_img,
                         self._blinker_right_img.get_rect(center=(right_x, y)))

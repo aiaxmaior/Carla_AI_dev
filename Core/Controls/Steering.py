@@ -1,4 +1,23 @@
 # Steering.py  — physics-informed steer curve, CARLA-agnostic (0.9.16)
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Physics-based steering model (Ackermann, tire slip, dynamics)
+# [X] | Hot-path functions: update_steer() called every tick from DualControl
+# [X] |- Heavy allocs in hot path? Minimal - pure math, no allocations
+# [ ] |- pandas/pyarrow/json/disk/net in hot path? No
+# [ ] | Graphics here? No
+# [X] | Data produced (tick schema?): Steering angle (float)
+# [ ] | Storage (Parquet/Arrow/CSV/none): None
+# [ ] | Queue/buffer used?: No
+# [X] | Session-aware? No - stateless per-tick computation
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_OK] Pure math (trig, interpolation) - very fast
+# 2. [PERF_OK] No CARLA queries, no I/O - efficient
+# 3. [PERF_OK] Dataclass with computed fields - minimal overhead
+# ============================================================================
+
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional, Tuple, Dict, List

@@ -1,3 +1,22 @@
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Manager/orchestrator for PredictiveIndices
+# [X] | Hot-path functions: tick() called every frame (but throttled internally)
+# [X] |- Heavy allocs in hot path? Minimal - dict mapping only
+# [X] |- pandas/pyarrow/json/disk/net in hot path? YES - df.iloc[-1] every 10 frames
+# [ ] | Graphics here? No
+# [X] | Data produced (tick schema?): Indices dict (delegated to PredictiveIndices)
+# [ ] | Storage (Parquet/Arrow/CSV/none): None
+# [X] | Queue/buffer used?: No - pulls from DataIngestion DataFrame directly
+# [X] | Session-aware? No
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_HOT] df.iloc[-1] every 10 frames - pandas row access, moderate cost
+# 2. [PERF_OK] update_interval=10 throttles compute - acceptable (3 Hz at 30 FPS)
+# 3. [PERF_SPLIT] Consider: pass latest obs dict from Main instead of DataFrame access
+# ============================================================================
+
 import logging
 import os
 import sys

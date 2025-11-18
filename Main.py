@@ -12,6 +12,25 @@ Recent Date: 09.12.2025
 Versioning: v0.3.2
 """
 
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Main orchestration, game loop, CARLA connection, session mgmt
+# [X] | Hot-path functions: game_loop() main tick loop (L331-433)
+# [X] |- Heavy allocs in hot path? YES - dict creation every frame (L411-419)
+# [X] |- pandas/pyarrow/json/disk/net in hot path? CSV save in finally only
+# [ ] | Graphics here? No (delegated to World/HUD)
+# [X] | Data produced (tick schema?): metrics dict per frame
+# [X] | Storage (Parquet/Arrow/CSV/none): CSV via DataIngestion
+# [X] | Queue/buffer used?: DataIngestion handles internally
+# [X] | Session-aware? (session_id/tick_index): Yes (frame from snapshot)
+# [X] | Debug-only heavy features?: xrandr logging, verbose iLib.ilog
+# Top 3 perf risks:
+# 1. [PERF_HOT] Logging spam in tick loop (L374 seatbelt every frame, L342, L1005/1008 blinker)
+# 2. [PERF_HOT] Dict allocation every frame (L411-419) - should reuse or pool
+# 3. [PERF_SPLIT] Heavy imports at module level (carla, pygame, pandas-commented but DataIngestion imports it)
+# ============================================================================
+
 import argparse
 import logging
 import os
@@ -114,6 +133,7 @@ def ensure_evdev_map(force=False, moza_event=None, arduino_event=None):
     return True
 
 
+# [PERF_HOT] Main game loop - runs continuously every tick
 def game_loop(args, client, monitors, joystick_mappings=None):
     """
     Main simulation loop. Handles a single session from start to end.
@@ -328,6 +348,7 @@ def game_loop(args, client, monitors, joystick_mappings=None):
         clock = pygame.time.Clock()
 
         # --- Main Tick Loop for this Session ---
+        # [PERF_HOT] Critical path: This loop runs at 50 FPS (every 20ms)
         while True:
             clock.tick(50)
 
@@ -371,6 +392,8 @@ def game_loop(args, client, monitors, joystick_mappings=None):
 
                 # --- Data Gathering for Logging and Scoring ---
                 seatbelt_state = hardware_bridge._seatbelt_fastened
+                # [PERF_HOT][DEBUG_ONLY] CRITICAL: This logs EVERY FRAME! Should be throttled or debug-only
+                # TODO: Move to debug mode or throttle to once per second
                 logging.info(f"Seatbelt state: {'ON' if seatbelt_state else 'OFF'}")
                 controller._seatbelt_state = seatbelt_state
                 velocity = world_obj.player.get_velocity()
@@ -406,6 +429,7 @@ def game_loop(args, client, monitors, joystick_mappings=None):
                 overall_dp_score = mvd_feature_extractor.get_overall_mvd_score()
                 
                 # --- RESTORED: Per-frame data logging ---
+                # [PERF_HOT] Dict allocation every frame - consider object pooling or reuse
                 control_datalog = controller.get_datalog()
                 mvd_datalog = mvd_feature_extractor.get_mvd_datalog_metrics()
                 metrics = {
