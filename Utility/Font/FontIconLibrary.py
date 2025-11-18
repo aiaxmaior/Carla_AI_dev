@@ -1,6 +1,25 @@
 # IconLibrary.py
 # A simple library to manage and load icons and fonts for applications.
 
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Icon & font asset library (init only)
+# [ ] | Hot-path functions: None (asset loading at init, lookups are fast)
+# [ ] |- Heavy allocs in hot path? N/A - dict lookups after init
+# [X] |- pandas/pyarrow/json/disk/net in hot path? JSON load at init only
+# [ ] | Graphics here? No (provides assets, doesn't render)
+# [ ] | Data produced (tick schema?): Asset dicts
+# [ ] | Storage (Parquet/Arrow/CSV/none): None (loads from JSON)
+# [ ] | Queue/buffer used?: No
+# [ ] | Session-aware? No
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_OK] NOT in hot path - dict lookups are O(1)
+# 2. [PERF_OK] JSON load at __init__ only
+# 3. [PERF_OK] pygame.font.Font() created at init
+# ============================================================================
+
 import os
 import json
 import logging

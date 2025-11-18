@@ -1,4 +1,22 @@
 # PreWelcomeSelect.py
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Pre-startup UI (resolution, traffic settings)
+# [ ] | Hot-path functions: None (runs BEFORE main loop)
+# [ ] |- Heavy allocs in hot path? N/A (startup only)
+# [ ] |- pandas/pyarrow/json/disk/net in hot path? No
+# [X] | Graphics here? YES - full pygame UI (but pre-simulation)
+# [ ] | Data produced (tick schema?): Config choices only
+# [ ] | Storage (Parquet/Arrow/CSV/none): None
+# [ ] | Queue/buffer used?: No
+# [ ] | Session-aware? No
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_OK] NOT in hot path - runs before simulation starts
+# 2. [PERF_OK] UI rendering acceptable (one-time startup)
+# ============================================================================
+
 import pygame
 import os
 import sys

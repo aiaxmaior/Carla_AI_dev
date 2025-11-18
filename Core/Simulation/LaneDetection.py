@@ -4,6 +4,26 @@ TensorRT-optimized lane detection module for Q-DRIVE Alpha.
 Supports both Jetson Orin and PC deployment with lightweight segmentation.
 """
 
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Lane detection using TensorRT (GPU-accelerated)
+# [X] | Hot-path functions: infer() if used in real-time mode
+# [X] |- Heavy allocs in hot path? YES - GPU memory transfers, inference
+# [ ] |- pandas/pyarrow/json/disk/net in hot path? No (pure GPU compute)
+# [ ] | Graphics here? No (computer vision)
+# [X] | Data produced (tick schema?): Lane segmentation masks
+# [ ] | Storage (Parquet/Arrow/CSV/none): None
+# [ ] | Queue/buffer used?: Depends on integration
+# [ ] | Session-aware? No
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_HOT] TensorRT inference if called every frame (GPU-bound)
+# 2. [PERF_HOT] CPU<->GPU memory transfers (cudaMemcpy)
+# 3. [PERF_SPLIT] Should run async or throttled (e.g., 10-20 Hz, not 60 Hz)
+# 4. [PERF_OK] TRT is efficient when used correctly
+# ============================================================================
+
 import numpy as np
 import cv2
 import os
