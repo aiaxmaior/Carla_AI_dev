@@ -627,6 +627,127 @@ class HUD(object):
                 engine_rpm = wheel_rpm * gear_ratio * final_ratio
                 return engine_rpm
             
+    def _render_radial_speedometer(self, display, center_x, center_y, radius, speed_mph, max_speed=100):
+        """
+        Render a 270-degree radial speedometer gauge.
+
+        Args:
+            display: Pygame display surface
+            center_x, center_y: Center point of the gauge
+            radius: Radius of the gauge
+            speed_mph: Current speed in MPH
+            max_speed: Maximum speed on the gauge (default 100)
+        """
+        import math
+
+        # Constants
+        START_ANGLE = 225  # Start at bottom-left (in degrees)
+        END_ANGLE = -45    # End at bottom-right (in degrees)
+        SWEEP_DEGREES = 270
+
+        # Convert to radians for pygame (which uses radians, 0 = right, CCW positive)
+        # We need to convert our angles to pygame's coordinate system
+        def deg_to_rad(deg):
+            return math.radians(deg)
+
+        # Colors
+        bg_color = (40, 40, 40)
+        tick_color = (200, 200, 200)
+        warning_color = (255, 100, 0)
+        danger_color = (255, 50, 50)
+        needle_color = (255, 60, 60)
+        text_color = (255, 255, 255)
+
+        # Draw outer circle background
+        pygame.draw.circle(display, bg_color, (int(center_x), int(center_y)), radius)
+        pygame.draw.circle(display, (80, 80, 80), (int(center_x), int(center_y)), radius, 2)
+
+        # Draw tick marks and numbers
+        for speed in range(0, max_speed + 1, 10):
+            # Calculate angle for this speed (270 degrees total)
+            angle_deg = START_ANGLE - (speed / max_speed) * SWEEP_DEGREES
+            angle_rad = deg_to_rad(angle_deg)
+
+            # Major tick mark
+            tick_start_radius = radius - 15
+            tick_end_radius = radius - 5
+
+            start_x = center_x + tick_start_radius * math.cos(angle_rad)
+            start_y = center_y - tick_start_radius * math.sin(angle_rad)
+            end_x = center_x + tick_end_radius * math.cos(angle_rad)
+            end_y = center_y - tick_end_radius * math.sin(angle_rad)
+
+            # Color tick marks - warning zone at 80+
+            tick_col = danger_color if speed >= 80 else tick_color
+            pygame.draw.line(display, tick_col, (start_x, start_y), (end_x, end_y), 3)
+
+            # Draw speed numbers
+            if speed % 20 == 0:  # Show numbers at 0, 20, 40, 60, 80, 100
+                label_radius = radius - 30
+                label_x = center_x + label_radius * math.cos(angle_rad)
+                label_y = center_y - label_radius * math.sin(angle_rad)
+
+                label_surf = self.panel_fonts["small_label"].render(str(speed), True, tick_col)
+                label_rect = label_surf.get_rect(center=(int(label_x), int(label_y)))
+                display.blit(label_surf, label_rect)
+
+        # Draw minor tick marks (every 5 MPH)
+        for speed in range(0, max_speed + 1, 5):
+            if speed % 10 != 0:  # Skip major ticks
+                angle_deg = START_ANGLE - (speed / max_speed) * SWEEP_DEGREES
+                angle_rad = deg_to_rad(angle_deg)
+
+                tick_start_radius = radius - 12
+                tick_end_radius = radius - 5
+
+                start_x = center_x + tick_start_radius * math.cos(angle_rad)
+                start_y = center_y - tick_start_radius * math.sin(angle_rad)
+                end_x = center_x + tick_end_radius * math.cos(angle_rad)
+                end_y = center_y - tick_end_radius * math.sin(angle_rad)
+
+                pygame.draw.line(display, tick_color, (start_x, start_y), (end_x, end_y), 1)
+
+        # Draw the needle
+        # Clamp speed to max
+        clamped_speed = min(speed_mph, max_speed)
+        needle_angle_deg = START_ANGLE - (clamped_speed / max_speed) * SWEEP_DEGREES
+        needle_angle_rad = deg_to_rad(needle_angle_deg)
+
+        needle_length = radius - 20
+        needle_x = center_x + needle_length * math.cos(needle_angle_rad)
+        needle_y = center_y - needle_length * math.sin(needle_angle_rad)
+
+        # Draw needle as a thick line with a glow effect
+        # Glow effect (draw multiple lines with decreasing alpha)
+        for i in range(5, 0, -1):
+            glow_surf = pygame.Surface((radius * 2 + 20, radius * 2 + 20), pygame.SRCALPHA)
+            glow_color = (*needle_color, int(30 * (i / 5)))
+            pygame.draw.line(glow_surf, glow_color,
+                           (radius + 10, radius + 10),
+                           (radius + 10 + (needle_x - center_x), radius + 10 + (needle_y - center_y)),
+                           i * 2)
+            display.blit(glow_surf, (int(center_x - radius - 10), int(center_y - radius - 10)))
+
+        # Main needle
+        pygame.draw.line(display, needle_color, (center_x, center_y), (needle_x, needle_y), 4)
+
+        # Center hub
+        pygame.draw.circle(display, (60, 60, 60), (int(center_x), int(center_y)), 12)
+        pygame.draw.circle(display, needle_color, (int(center_x), int(center_y)), 8)
+        pygame.draw.circle(display, (30, 30, 30), (int(center_x), int(center_y)), 5)
+
+        # Digital speed readout in center
+        speed_text = f"{int(speed_mph)}"
+        speed_surf = self.panel_fonts["main_score"].render(speed_text, True, text_color)
+        mph_surf = self.panel_fonts["small_label"].render("MPH", True, (180, 180, 180))
+
+        # Position below center
+        speed_rect = speed_surf.get_rect(center=(int(center_x), int(center_y + 30)))
+        mph_rect = mph_surf.get_rect(center=(int(center_x), int(center_y + 60)))
+
+        display.blit(speed_surf, speed_rect)
+        display.blit(mph_surf, mph_rect)
+
     def _render_predictive_panel(self, display, x, y):
         """Render predictive safety indices"""
         if not self._predictive_indices:
@@ -879,13 +1000,15 @@ class HUD(object):
         # --- 2) Render the HUD panel, notifications, etc. (This code now runs always) ---
         if self._show_info and getattr(self, '_info_text', None):
             # Layout across 4 screens
-            main_screen_offset_x = self.dim[0] // 4
             single_screen_width = self.dim[0] // 4
 
-            panel_h = int(self.dim[1] * 0.4)
-            panel_w = int(single_screen_width * 0.25)
-            panel_x = main_screen_offset_x + (single_screen_width - panel_w) / 2
-            panel_y = int(self.dim[1] * 0.58)
+            # Wider, shorter panel for ultrawide display
+            panel_w = int(single_screen_width * 1.2)  # 120% of single screen (was 25%)
+            panel_h = int(self.dim[1] * 0.25)  # 25% height (was 40%)
+            # Center panel on full window width (ultrawide center)
+            panel_x = (self.dim[0] - panel_w) / 2
+            # Positioned lower on screen
+            panel_y = int(self.dim[1] * 0.68)
             panel_bg_color = (20, 20, 20, 150)
             panel_border_color = (0, 150, 255, 200)
             padding = math.floor(20*self.scale_factor)
@@ -895,24 +1018,60 @@ class HUD(object):
             pygame.draw.rect(info_surf, panel_border_color, info_surf.get_rect(), width=2, border_radius=15)
             display.blit(info_surf, (panel_x, panel_y))
 
-            v_offset = panel_y + padding
-            h_offset = panel_x + padding
+            # Horizontal layout: divide panel into sections
+            # Section widths: Speedometer(35%), RPM+Gear(15%), Scores(50%)
+            section_y = panel_y + padding
 
-            for key, value in self._info_text.items():
-                renderer = self.info_renderers.get(key)
-                if renderer:
-                    v_offset = renderer(display, h_offset, v_offset, value, panel_x, panel_w, padding)
-                else:
-                    v_offset = self._render_text(
-                        display, h_offset, v_offset, f"{key}: {value}", self.panel_fonts["small_label"], (200, 200, 200), 10
-                    )
-            
-            v_offset = self._draw_notifications(display, h_offset, v_offset)
+            # LEFT: Radial Speedometer
+            speed_mph = self._info_text.get("speed_mph", 0)
+            gear = self._info_text.get("gear", "N")
+
+            # Calculate speedometer position and size
+            speedo_radius = int(panel_h * 0.42)  # Slightly smaller than half panel height
+            speedo_center_x = panel_x + speedo_radius + padding + 10
+            speedo_center_y = panel_y + (panel_h // 2)
+
+            # Render the radial speedometer
+            self._render_radial_speedometer(display, speedo_center_x, speedo_center_y, speedo_radius, speed_mph)
+
+            # MIDDLE-LEFT: RPM and GEAR (stacked)
+            rpm_x = panel_x + int(panel_w * 0.35) + padding
+            rpm_text = self._info_text.get("RPM", "N/A")
+            rpm_surf = self.panel_fonts["sub_value"].render(f"RPM: {rpm_text}", True, (200, 200, 200))
+            gear_surf = self.panel_fonts["sub_value"].render(f"GEAR: {gear}", True, (200, 200, 200))
+            display.blit(rpm_surf, (rpm_x, section_y))
+            display.blit(gear_surf, (rpm_x, section_y + rpm_surf.get_height() + 5))
+
+            # RIGHT: Scores (vertical stack within right section)
+            scores_x = panel_x + int(panel_w * 0.50) + padding
+            scores_y = section_y
+
+            # Overall Score (large)
+            overall_score = self._info_text.get("main_score", "100")
+            title_surf = self.panel_fonts["title"].render("Overall Score", True, (200, 200, 200))
+            score_surf = self.panel_fonts["large_val"].render(overall_score, True, (255, 255, 255))
+            display.blit(title_surf, (scores_x, scores_y))
+            scores_y += title_surf.get_height() + 5
+            display.blit(score_surf, (scores_x, scores_y))
+            scores_y += score_surf.get_height() + 10
+
+            # Sub-scores (compact)
+            sub_labels = self._info_text.get("sub_label", {})
+            for label, value in sub_labels.items():
+                sub_text = f"{label}: {value}"
+                sub_surf = self.panel_fonts["small_label"].render(sub_text, True, (200, 200, 200))
+                display.blit(sub_surf, (scores_x, scores_y))
+                scores_y += sub_surf.get_height() + 3
+
             self._draw_center_notifications(display)
+
+            # Calculate final offsets for warnings and predictive panel
+            h_offset = panel_x + padding
+            v_offset = panel_y + panel_h - padding  # Bottom of panel
 
             panel_rect = pygame.Rect(int(panel_x), int(panel_y), int(panel_w), int(panel_h))
             self.warning_manager.render(display, panel_rect, v_offset)
-        
+
         if self._predictive_indices:
             self._render_predictive_panel(display, h_offset, v_offset+math.floor(20*self.scale_factor))
 

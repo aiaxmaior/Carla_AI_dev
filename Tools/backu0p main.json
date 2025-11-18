@@ -1,0 +1,28 @@
+{
+  "ts": 1730832001.235,
+  "scenario_id": "run_2025-11-05_A",
+  "event": {
+    "topic": "forward_collision|lane|harsh|pattern",
+    "severity": "CRITICAL|WARN|ADVISORY",
+    "reasons": ["ttc<=1.8s","thw<2.0s","tlc<=1.0s","lat_g=0.52g","tailgating"],
+    "metrics": {
+      "speed_kmh": 63,
+      "ttc_s": 1.7,
+      "thw_s": 1.6,
+      "tlc_s": 1.2,
+      "ax_g": -0.15,
+      "ay_g": 0.52,
+      "mvd": 68
+    }
+  },
+  "compressed": {
+    "frame_v2": "F12845:S63:M68:V...:T1.7",
+    "window_llm": "WARN|S63|M68|H1|L0|TTC1.7"
+  },
+  "patterns": { "tailgating": true, "lane_weaving": false },
+  "actor_context": { "front_obj_m": 11.8, "rel_speed_mps": -7.2 },
+  "speakable": "Critical: TTC 1.7s at 63 km/h. Increase gap now.",
+  "ui_hint": "fcw"
+}
+ng code vfr5
+  

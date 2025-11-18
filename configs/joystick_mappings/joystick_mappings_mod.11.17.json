@@ -5,13 +5,13 @@
         "id": 0,
         "raw_calibrated_min": -1.000030518509476,
         "raw_calibrated_max": 1.0,
-        "raw_calibrated_center": 0.00433349609375
+        "raw_calibrated_center": 0.000244140625
     },
     "THROTTLE": {
         "type": "axis_pedal",
         "joy_idx": 0,
         "id": 2,
-        "raw_released_val": -0.999908447265625,
+        "raw_released_val": -0.99993896484375,
         "raw_pressed_val": 0.999969482421875
     },
     "BRAKE": {
@@ -62,24 +62,16 @@
         "id": 31
     },
     "BLINKER_LEFT": {
-        "type": "button",
-        "joy_idx": 1,
-        "id": 4
+        "type": "unmapped"
     },
     "BLINKER_LEFT_OFF": {
-        "type": "button",
-        "joy_idx": 1,
-        "id": 4
+        "type": "unmapped"
     },
     "BLINKER_RIGHT": {
-        "type": "button",
-        "joy_idx": 1,
-        "id": 5
+        "type": "unmapped"
     },
     "BLINKER_RIGHT_OFF": {
-        "type": "button",
-        "joy_idx": 1,
-        "id": 5
+        "type": "unmapped"
     },
     "HAZARD": {
         "type": "button",

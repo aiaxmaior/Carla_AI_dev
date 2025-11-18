@@ -19,11 +19,9 @@
 !/Tools/
 !/Utility/
 !/images/
+!/audio/              # Track audio alert files
 # Also track configs (important for deployment)
 !/configs/
-
-# NOTE: images/ and jetson/ are EXCLUDED by default due to large files
-# See below for how to whitelist specific files from these directories
 
 # ====================================================================
 # STEP 3: Whitelist - Main directory scripts to TRACK
@@ -32,6 +30,7 @@
 # Primary entry points
 !/Main.py
 !/PreWelcomeSelect.py
+!/World.py
 
 # Core functional scripts
 !/DataConsolidator.py
@@ -44,12 +43,33 @@
 !/DynamicMonitor.py
 !/Helpers.py
 !/HUD.py
+!/TitleScreen.py
+
+# Input and controls
 !/input_utils.py
 !/monitor_config.py
-
-# Controls and mapping
+!/controls_queue.py
 !/controls_queue_s.py
 !/dynamic_mapping.py
+
+# Hardware integration
+!/MozaArduinoVirtualGamepad.py
+!/MozaVirtualGamepad.py
+!/Steering.py
+!/Sensors.py
+!/_steering_params.py
+
+# Simulation components
+!/MVD.py
+!/TrafficManager.py
+!/VehicleLibrary.py
+!/VisionPerception.py
+
+# Utilities
+!/FontIconLibrary.py
+!/sys_task.py
+!/tts_integration.py
+!/2q.py
 
 # Migration/setup scripts
 !/automated_migration_script.py
@@ -162,7 +182,7 @@ Plugins/
 *.uasset
 Carla_recorder_logs/
 
-# Backup and temp files
+# Backup and temp files (this catches all mod/backup/dated versions)
 *backup*
 *Backup*
 *.backup
@@ -173,12 +193,15 @@ Carla_recorder_logs/
 *.temp
 *~
 .*.swp
+*_mod.*           # Catches files like HUD_mod.11.17.py
+*.backup_*        # Catches files like Main.py.backup_3monitor
 
-# Archives
+# Archives and old versions
 Main_archive*/
 Backups/
 backup/
 old/
+v/                # Misnamed archive directory
 
 # Research and documentation (if you don't want to track)
 Research/
@@ -193,10 +216,8 @@ TEST-*/
 
 # Maps and large assets (track selectively)
 HDMaps/
-# If you need specific maps, use: !HDMaps/specific_map.xodr
 
-# Audio/TTS (usually large files)
-audio/
+# TTS (usually large files, audio/alerts is tracked above)
 TTS/
 
 # LLM related (can be large)
@@ -212,39 +233,35 @@ Co-Simulation/
 # QDrive (if this is generated or external)
 QDrive/
 jetson/
+
 # Misc
 misc/
 
 # ====================================================================
-# SPECIAL CASES - Uncomment if needed
+# SPECIAL CASES
 # ====================================================================
 
-# If you want to track specific files in ignored directories:
-# !HDMaps/my_custom_map.xodr
-# !Documentation/IMPORTANT_DOC.md
-
-# If you want to ignore specific files in tracked directories:
-# Core/Vision/old_version.py
-
-# Large data files even in tracked dirs
+# Large media files even in tracked dirs (but keep .wav alert sounds in audio/)
 **/*.mp4
 **/*.avi
 **/*.mov
 **/*.mkv
 **/*.mp3
-**/*.wav
 **/*.flac
-**/*.zip
-**/*.tar.gz
-**/*.tar
-**/*.rar
-**/*.7z
+# Note: .wav files in audio/alerts/ are small and needed, so they're tracked
 
 # Ignore data directories even in tracked folders
 **/data/
 **/datasets/
 **/models/checkpoints/
 **/logs/
+
+# Archive and compression files
+**/*.zip
+**/*.tar.gz
+**/*.tar
+**/*.rar
+**/*.7z
 
 # ====================================================================
 # NOTES
@@ -254,6 +271,17 @@ misc/
 # 1. Ignore everything with /*
 # 2. Explicitly un-ignore (!pattern) what you want to track
 # 3. Add specific ignores for common unwanted files
+#
+# What's tracked:
+# - Core/, Tools/, Utility/, custom_assets/, images/, configs/, temp/, audio/
+# - All normally-named root .py scripts (Main.py, World.py, etc.)
+# - Documentation and config files (.md, requirements.txt, etc.)
+#
+# What's ignored:
+# - Backups/ and v/ directories
+# - Any file with "backup", "mod", or dates in the name
+# - __pycache__, logs, large binary files
+# - External dependencies (PythonAPI, scenario_runner, etc.)
 #
 # To see what will be committed: git status
 # To see what's being ignored: git status --ignored

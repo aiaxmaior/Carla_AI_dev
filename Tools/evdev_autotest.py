@@ -165,8 +165,8 @@ def main():
     ap.add_argument("--timeout", type=float, default=8.0, help="Seconds per capture step")
 
     # prefer explicit event paths; otherwise fall back to name needles
-    ap.add_argument("--moza-event", help="e.g. /dev/input/event10")
-    ap.add_argument("--arduino-event", help="see ./Tools/evdev_probe --needle . e.g. /dev/input/event15")
+    ap.add_argument("--moza-event", help="e.g. /dev/input/event18")
+    ap.add_argument("--arduino-event", help="see ./Tools/evdev_probe --needle . e.g. /dev/input/event19")
     ap.add_argument("--moza-needle", default="Gudsen MOZA Multi-function Stalk")
     ap.add_argument("--arduino-needle", default="Arduino LLC Arduino Leonardo")
 
@@ -183,7 +183,7 @@ def main():
     # ---------- MOZA ----------
     moza_path, moza_name = _resolve_device(args.moza_event, args.moza_needle)
     if not moza_path:
-        print("[MOZA] Not found. Try --moza-event /dev/input/event10 "
+        print("[MOZA] Not found. Try --moza-event /dev/input/event18 "
               "or --moza-needle \"Gudsen MOZA Multi-function Stalk\".")
     else:
         print(f"[MOZA] {moza_name} @ {moza_path}")
