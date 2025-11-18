@@ -31,16 +31,41 @@ class Perception:
     Ground-truth 'vision' emulation using ONLY existing sim state:
       - No new sensors/actors; uses your camera actor for alignment.
       - Returns per-object: id, class, distance (m), relative LoS speed (m/s), bbox_xyxy.
+
+    PERFORMANCE OPTIMIZATIONS:
+      - Configurable distance culling (default 50m instead of 1500m)
+      - Frame-based result caching (skip re-computation for N frames)
+      - Throttling mechanism (run at reduced frequency)
     """
 
     def __init__(self, world_obj, image_width=1920, image_height=1080,
-                 fov_deg=None, camera_actor=None):
+                 fov_deg=None, camera_actor=None,
+                 max_distance=50.0, cache_frames=2, throttle_interval=1):
+        """
+        Args:
+            max_distance: Maximum detection distance in meters (default: 50m)
+            cache_frames: Number of frames to cache results (default: 2)
+            throttle_interval: Compute every N frames (default: 1 = every frame)
+        """
         self.world_obj = world_obj
         self.world = world_obj.world
         self.player = world_obj.player
         self.camera_actor = camera_actor
         self.image_width = int(image_width)
         self.image_height = int(image_height)
+
+        # PERFORMANCE: Configurable distance culling (was hardcoded to 1500m!)
+        self.max_distance = float(max_distance)
+
+        # PERFORMANCE: Result caching to avoid re-computation
+        self._cache_frames = int(cache_frames)
+        self._cache = {}  # Key: (camera_id, include_2d, max_objects) -> (frame_num, results)
+        self._frame_counter = 0
+
+        # PERFORMANCE: Throttling mechanism
+        self._throttle_interval = int(throttle_interval)
+        self._last_compute_frame = -999
+
         # If a camera actor is given, prefer its FOV
         if camera_actor is not None and fov_deg is None:
             fov_deg = float(camera_actor.attributes.get("fov", "90"))
@@ -136,13 +161,82 @@ class Perception:
             self.fov_deg = float(fov_deg)
         self._rebuild_intrinsics()
 
-    def compute(self, max_objects=32, include_2d=False, purity_min=0.0):
+    def set_performance_params(self, max_distance=None, cache_frames=None, throttle_interval=None):
+        """
+        Configure performance optimization parameters at runtime.
+
+        Args:
+            max_distance: Maximum detection distance in meters (None = no change)
+            cache_frames: Number of frames to cache results (None = no change)
+            throttle_interval: Compute every N frames (None = no change)
+
+        Examples:
+            # Maximum performance - very aggressive
+            perception.set_performance_params(max_distance=30, cache_frames=3, throttle_interval=2)
+
+            # Balanced (default settings)
+            perception.set_performance_params(max_distance=50, cache_frames=2, throttle_interval=1)
+
+            # High quality - less aggressive
+            perception.set_performance_params(max_distance=100, cache_frames=1, throttle_interval=1)
+
+            # Original behavior (pre-optimization)
+            perception.set_performance_params(max_distance=1500, cache_frames=0, throttle_interval=1)
+        """
+        if max_distance is not None:
+            self.max_distance = float(max_distance)
+            logging.info(f"[PERF] VisionPerception max_distance set to {self.max_distance}m")
+
+        if cache_frames is not None:
+            self._cache_frames = int(cache_frames)
+            if cache_frames == 0:
+                self._cache.clear()  # Disable caching
+            logging.info(f"[PERF] VisionPerception cache_frames set to {self._cache_frames}")
+
+        if throttle_interval is not None:
+            self._throttle_interval = int(throttle_interval)
+            logging.info(f"[PERF] VisionPerception throttle_interval set to {self._throttle_interval}")
+
+    def compute(self, max_objects=32, include_2d=False, purity_min=0.0, force_recompute=False):
         """
         Returns list of dicts:
         { track_id, cls, distance_m, rel_speed_mps, bbox_xyxy|None }
         Seg filtering applies only when seg maps are present AND include_2d=True
         (we need the bbox ROI to vote a tag).
+
+        PERFORMANCE: Now with caching and throttling!
+        Args:
+            force_recompute: Bypass cache/throttling and force fresh computation
         """
+        # [PERF_HOT] Increment frame counter
+        self._frame_counter += 1
+
+        # [PERF_HOT] Generate cache key based on camera + parameters
+        camera_id = self.camera_actor.id if self.camera_actor else "ego"
+        cache_key = (camera_id, include_2d, max_objects)
+
+        # [PERF_HOT] Check cache first (skip expensive computation!)
+        if not force_recompute and cache_key in self._cache:
+            cached_frame, cached_results = self._cache[cache_key]
+            frames_since_cache = self._frame_counter - cached_frame
+
+            # Return cached results if still fresh
+            if frames_since_cache < self._cache_frames:
+                # logging.debug(f"[PERF] VisionPerception cache hit! (age: {frames_since_cache} frames)")
+                return cached_results
+
+        # [PERF_HOT] Throttling check - skip computation if called too frequently
+        if not force_recompute and self._throttle_interval > 1:
+            frames_since_compute = self._frame_counter - self._last_compute_frame
+            if frames_since_compute < self._throttle_interval:
+                # Return stale cached results or empty list if no cache
+                if cache_key in self._cache:
+                    return self._cache[cache_key][1]
+                return []
+
+        # --- EXPENSIVE COMPUTATION STARTS HERE ---
+        # logging.debug(f"[PERF] VisionPerception computing fresh results (frame {self._frame_counter})")
+
         player = self.player
         if not player or not player.is_alive:
             return []
@@ -153,6 +247,7 @@ class Perception:
         ego_loc = cam_world.location
 
         objs = []
+        # [PERF_HOT] This is EXPENSIVE - queries all actors in world!
         for a in self.world.get_actors().filter("*"):
             if a.id == player.id:
                 continue
@@ -163,7 +258,9 @@ class Perception:
             a_loc = a.get_transform().location
             to_target = a_loc - ego_loc
             dist = (to_target.x**2 + to_target.y**2 + to_target.z**2) ** 0.5
-            if dist < 0.5 or dist > 1500.0:
+
+            # [PERF_FIX] Distance culling: was 1500m, now configurable (default 50m)
+            if dist < 0.5 or dist > self.max_distance:
                 continue
 
             # Gate by FOV and front-facing
@@ -222,8 +319,14 @@ class Perception:
             objs.append(o)
 
         objs.sort(key=lambda d: d["distance_m"])
-#        logging.info(f"number of objects:{len(objs)}")
-        return objs[:max_objects]
+        results = objs[:max_objects]
+
+        # [PERF_HOT] Cache results for future frames
+        self._cache[cache_key] = (self._frame_counter, results)
+        self._last_compute_frame = self._frame_counter
+
+        # logging.info(f"[PERF] Computed {len(results)} objects (frame {self._frame_counter})")
+        return results
     
     def _rebuild_intrinsics(self):
         self.fx = self.image_width / (2.0 * math.tan(math.radians(self.fov_deg) / 2.0))
