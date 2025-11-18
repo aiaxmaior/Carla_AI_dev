@@ -20,6 +20,7 @@
 !/Utility/
 !/images/
 !/audio/              # Track audio alert files
+!/misc/
 # Also track configs (important for deployment)
 !/configs/
 
