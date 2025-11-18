@@ -1,3 +1,22 @@
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Package __init__ (imports, helper functions, NOT in hot path)
+# [ ] | Hot-path functions: None (import-time + utility functions)
+# [ ] |- Heavy allocs in hot path? N/A - import-time only
+# [ ] |- pandas/pyarrow/json/disk/net in hot path? No
+# [ ] | Graphics here? No
+# [ ] | Data produced (tick schema?): None
+# [ ] | Storage (Parquet/Arrow/CSV/none): None
+# [ ] | Queue/buffer used?: No
+# [ ] | Session-aware? No
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_OK] __init__.py - package imports + utility functions
+# 2. [PERF_OK] Helper functions (create_sensor_suite, etc.) NOT in hot path
+# 3. [PERF_OK] No performance concerns
+# ============================================================================
+
 """
 Q-DRIVE Cortex Sensor Package
 ============================
