@@ -65,6 +65,7 @@ try:
     from .DMS_Module import AlertLevel, EyeMetrics, DriverState, DMS
     _dms_tracking_available = True
 except ImportError:
+    _dms_tracking_available = False
     DMS_Module = None
     pass
 
@@ -89,6 +90,7 @@ try:
     from .HazardAnalysis import HazardDetector, RiskAssessment
     _hazard_analysis_available = True
 except ImportError:
+    _hazard_analysis_available = False
     pass
 
 __all__ = []
