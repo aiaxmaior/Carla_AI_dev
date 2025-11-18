@@ -19,7 +19,7 @@
 !/Tools/
 !/Utility/
 !/images/
-!/audio/              # Track audio alert files
+!/audio/
 !/misc/
 # Also track configs (important for deployment)
 !/configs/
