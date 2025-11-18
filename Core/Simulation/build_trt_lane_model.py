@@ -14,6 +14,24 @@ Supported input formats:
     - TensorFlow SavedModel (directory)
     - Keras (.h5)
 """
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: TensorRT model building utility (NOT in hot path)
+# [ ] | Hot-path functions: None (offline model conversion tool)
+# [ ] |- Heavy allocs in hot path? N/A - not in hot path
+# [X] |- pandas/pyarrow/json/disk/net in hot path? Heavy GPU operations (TensorRT)
+# [ ] | Graphics here? No (model building only)
+# [ ] | Data produced (tick schema?): None (TensorRT engine file)
+# [X] | Storage (Parquet/Arrow/CSV/none): Binary (.trt engine file)
+# [ ] | Queue/buffer used?: No
+# [ ] | Session-aware? No
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_OK] NOT in hot path - offline model building tool
+# 2. [PERF_OK] TensorRT compilation heavy but acceptable for offline use
+# 3. [PERF_OK] GPU operations acceptable for model optimization
+# ============================================================================
 
 import argparse
 import os

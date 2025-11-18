@@ -4,6 +4,24 @@ Allocates processing to specific GPU (GPU2)
 Author: Arjun Joshi
 Date: 10.14.2025
 """
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: GPU-accelerated DMS (alternate version of DMS_Module.py)
+# [X] | Hot-path functions: Similar to DMS_Module.py (if used)
+# [X] |- Heavy allocs in hot path? Moderate (if used) - numpy arrays, GPU ops
+# [ ] |- pandas/pyarrow/json/disk/net in hot path? No
+# [X] | Graphics here? YES - OpenCV + MediaPipe with GPU acceleration
+# [X] | Data produced (tick schema?): DriverState dataclass (if active)
+# [ ] | Storage (Parquet/Arrow/CSV/none): None
+# [X] | Queue/buffer used?: Likely (if follows DMS_Module.py pattern)
+# [ ] | Session-aware? No
+# [ ] | Debug-only heavy features?: None visible
+# Top 3 perf risks:
+# 1. [PERF_HOT] MediaPipe + GPU operations (if active)
+# 2. [PERF_OK] GPU allocation at import time (similar to DMS_Module.py)
+# 3. [PERF_SPLIT] NOTE: Appears to be alternate version - check which is used
+# ============================================================================
 
 import os
 import cv2 as cv

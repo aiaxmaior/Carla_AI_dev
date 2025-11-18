@@ -5,6 +5,24 @@ Helps users set up complex monitor arrangements including ultra-wide displays.
 
 Usage: python monitor_config.py [--test] [--interactive]
 """
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Monitor configuration utility (CLI tool, NOT in hot path)
+# [ ] | Hot-path functions: None (interactive setup wizard)
+# [ ] |- Heavy allocs in hot path? N/A - not in hot path
+# [ ] |- pandas/pyarrow/json/disk/net in hot path? JSON config read/write
+# [ ] | Graphics here? No (CLI only)
+# [ ] | Data produced (tick schema?): None
+# [X] | Storage (Parquet/Arrow/CSV/none): JSON (monitor configs)
+# [ ] | Queue/buffer used?: No
+# [ ] | Session-aware? No
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_OK] NOT in hot path - utility/setup tool only
+# 2. [PERF_OK] xrandr subprocess calls acceptable for setup
+# 3. [PERF_OK] Interactive UI loops acceptable
+# ============================================================================
 
 import sys
 import json

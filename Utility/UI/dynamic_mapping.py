@@ -1,3 +1,23 @@
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Joystick configuration UI (DUPLICATE? - see Core/Controls/dynamic_mapping.py)
+# [ ] | Hot-path functions: None (runs at startup or when remapping)
+# [X] |- Heavy allocs in hot path? N/A - not in hot path
+# [X] |- pandas/pyarrow/json/disk/net in hot path? Disk I/O at config save only
+# [X] | Graphics here? YES - pygame rendering
+# [ ] | Data produced (tick schema?): None (config JSON only)
+# [X] | Storage (Parquet/Arrow/CSV/none): JSON
+# [ ] | Queue/buffer used?: No
+# [ ] | Session-aware? No
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_OK] NOT in hot path - controller config UI only
+# 2. [PERF_SPLIT] NOTE: Appears to be DUPLICATE of Core/Controls/dynamic_mapping.py
+# 3. [PERF_OK] pygame rendering acceptable for config UI
+# NOTE: Check if this is still used or superseded by Core/Controls version
+# ============================================================================
+
 import pygame
 import sys
 import os
