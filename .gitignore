@@ -65,6 +65,7 @@
 !/TrafficManager.py
 !/VehicleLibrary.py
 !/VisionPerception.py
+!/pyarrow.py
 
 # Utilities
 !/FontIconLibrary.py
