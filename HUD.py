@@ -236,20 +236,16 @@ class HUD(object):
                 enable_ground_truth_matching=not getattr(args, "no_ground_truth_matching", False)
             )
 
-            # Attach LIDAR sensor
-            lidar_range = getattr(args, "lidar_range", args.safe_distance)
-            lidar_pps = getattr(args, "lidar_points_per_second", 56000)
-            lidar_freq = getattr(args, "lidar_rotation_frequency", 10.0)
-
-            perception.attach_lidar_sensor(
-                lidar_range=lidar_range,
-                points_per_second=lidar_pps,
-                rotation_frequency=lidar_freq
-            )
+            # Store LIDAR parameters for lazy attachment (will attach on first update)
+            perception._pending_lidar_config = {
+                'lidar_range': getattr(args, "lidar_range", args.safe_distance),
+                'points_per_second': getattr(args, "lidar_points_per_second", 56000),
+                'rotation_frequency': getattr(args, "lidar_rotation_frequency", 10.0)
+            }
 
             logging.info(f"[Perception] LIDAR Hybrid initialized - "
                         f"danger={args.danger_distance}m, caution={args.caution_distance}m, "
-                        f"safe={args.safe_distance}m, lidar_range={lidar_range}m, "
+                        f"safe={args.safe_distance}m, lidar_range={getattr(args, 'lidar_range', args.safe_distance)}m, "
                         f"show_danger_bbox={args.show_danger_bbox}, show_caution_bbox={args.show_caution_bbox}")
 
         else:

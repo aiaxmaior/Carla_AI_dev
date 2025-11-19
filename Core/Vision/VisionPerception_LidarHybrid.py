@@ -233,6 +233,20 @@ class LidarHybridPerception:
 
         Call ONCE per simulation tick from Main.py
         """
+        # Lazy LIDAR sensor attachment (happens on first update when world is ready)
+        if hasattr(self, '_pending_lidar_config') and self.lidar_sensor is None:
+            try:
+                config = self._pending_lidar_config
+                self.attach_lidar_sensor(
+                    lidar_range=config['lidar_range'],
+                    points_per_second=config['points_per_second'],
+                    rotation_frequency=config['rotation_frequency']
+                )
+                delattr(self, '_pending_lidar_config')  # Remove once attached
+            except Exception as e:
+                logging.error(f"[LidarHybridPerception] Failed to attach sensor: {e}")
+                # Keep _pending_lidar_config for retry on next update
+
         self._update_count += 1
 
         if self.latest_semantic_lidar is None:
