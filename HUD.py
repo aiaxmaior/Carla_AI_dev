@@ -32,6 +32,9 @@ import queue
 import threading
 from Utility.Font.FontIconLibrary import IconLibrary, FontLibrary
 from Core.Vision.VisionPerception import Perception
+from Core.Vision.VisionPerception_MinimalViable import MinimalVisionPerception
+from Core.Vision.VisionPerception_MetadataRoute import MetadataPerception
+from Core.Vision.VisionPerception_LidarHybrid import LidarHybridPerception, ThreatZone
 from EventManager import EventManager
 from Helpers import EndScreen, PersistentWarningManager, BlinkingAlert, HelpText
 import pygame
@@ -168,6 +171,10 @@ class HUD(object):
         self.vision_compare = getattr(args, "vision_compare", False)
         self.perception = None
         self._vision_writer = None
+
+        # Store args for perception configuration
+        self.args = args
+        self.perception_mode = getattr(args, "perception_mode", "lidar-hybrid")
         rec_path = getattr(args, "record_vision_demo", None)
         if rec_path:
             try:
@@ -178,6 +185,151 @@ class HUD(object):
                 logging.error(f"[VisionDemo] Failed to open writer: {e}")
                 self._vision_writer = None
         
+        # Object distance thresholds for notifications
+
+    def _initialize_perception(self, world_obj, camera_actor=None):
+        """
+        Initialize the appropriate perception system based on args.perception_mode
+
+        Args:
+            world_obj: World instance with .world and .player
+            camera_actor: Camera actor for programmatic mode (optional for others)
+
+        Returns:
+            Initialized perception instance
+        """
+        mode = self.perception_mode
+        args = self.args
+
+        logging.info(f"[Perception] Initializing mode: {mode}")
+
+        if mode == "programmatic":
+            # Original VisionPerception (legacy)
+            perception = Perception(world_obj, camera_actor=camera_actor)
+            logging.info(f"[Perception] Programmatic mode initialized (legacy)")
+
+        elif mode == "minimal-viable":
+            # MinimalViable: Update/Query separation with persistent tracking
+            perception = MinimalVisionPerception(
+                world_obj,
+                max_distance=getattr(args, "safe_distance", 100.0)
+            )
+            logging.info(f"[Perception] MinimalViable mode initialized (max_distance={args.safe_distance}m)")
+
+        elif mode == "metadata":
+            # Metadata Route: Lightest approach, metadata only
+            perception = MetadataPerception(
+                world_obj,
+                max_distance=getattr(args, "safe_distance", 100.0)
+            )
+            logging.info(f"[Perception] Metadata mode initialized (max_distance={args.safe_distance}m)")
+
+        elif mode == "lidar-hybrid":
+            # LIDAR Hybrid: GPU-accelerated sensor-based detection (recommended)
+            perception = LidarHybridPerception(
+                world_obj,
+                danger_distance=getattr(args, "danger_distance", 15.0),
+                caution_distance=getattr(args, "caution_distance", 30.0),
+                safe_distance=getattr(args, "safe_distance", 100.0),
+                show_danger_bbox=getattr(args, "show_danger_bbox", True),
+                show_caution_bbox=getattr(args, "show_caution_bbox", False),
+                enable_ground_truth_matching=not getattr(args, "no_ground_truth_matching", False)
+            )
+
+            # Attach LIDAR sensor
+            lidar_range = getattr(args, "lidar_range", args.safe_distance)
+            lidar_pps = getattr(args, "lidar_points_per_second", 56000)
+            lidar_freq = getattr(args, "lidar_rotation_frequency", 10.0)
+
+            perception.attach_lidar_sensor(
+                lidar_range=lidar_range,
+                points_per_second=lidar_pps,
+                rotation_frequency=lidar_freq
+            )
+
+            logging.info(f"[Perception] LIDAR Hybrid initialized - "
+                        f"danger={args.danger_distance}m, caution={args.caution_distance}m, "
+                        f"safe={args.safe_distance}m, lidar_range={lidar_range}m, "
+                        f"show_danger_bbox={args.show_danger_bbox}, show_caution_bbox={args.show_caution_bbox}")
+
+        else:
+            # Fallback to programmatic
+            logging.warning(f"[Perception] Unknown mode '{mode}', falling back to programmatic")
+            perception = Perception(world_obj, camera_actor=camera_actor)
+
+        return perception
+
+    def _get_perception_objects(self, max_objects=24, include_2d=True, camera_transform=None, camera_intrinsics=None):
+        """
+        Unified interface to get objects from any perception mode
+
+        Args:
+            max_objects: Maximum number of objects to return
+            include_2d: Whether to include 2D bounding boxes (expensive for some modes)
+            camera_transform: Camera transform for bbox projection
+            camera_intrinsics: Camera intrinsics (width, height, fov_deg)
+
+        Returns:
+            List of object dicts with {track_id, cls, distance_m, rel_speed_mps, bbox_xyxy}
+        """
+        if not self.perception:
+            return []
+
+        mode = self.perception_mode
+
+        try:
+            if mode == "programmatic":
+                # Original VisionPerception API
+                return self.perception.compute(max_objects=max_objects, include_2d=include_2d)
+
+            elif mode == "minimal-viable":
+                # MinimalViable API
+                return self.perception.get_objects_as_dict(
+                    max_objects=max_objects,
+                    include_2d=include_2d,
+                    camera_transform=camera_transform,
+                    camera_intrinsics=camera_intrinsics
+                )
+
+            elif mode == "metadata":
+                # Metadata Route API
+                objects = self.perception.get_objects(max_objects=max_objects)
+
+                # Optionally add bboxes on-demand (expensive!)
+                if include_2d and camera_transform and camera_intrinsics:
+                    for obj in objects[:10]:  # Only bbox for closest 10
+                        bbox = self.perception.get_bbox_for_object(
+                            obj['track_id'],
+                            camera_transform,
+                            width=camera_intrinsics.get('width', 1920),
+                            height=camera_intrinsics.get('height', 1080),
+                            fov_deg=camera_intrinsics.get('fov_deg', 90.0)
+                        )
+                        obj['bbox_xyxy'] = bbox
+                else:
+                    # No bbox
+                    for obj in objects:
+                        obj['bbox_xyxy'] = None
+
+                return objects
+
+            elif mode == "lidar-hybrid":
+                # LIDAR Hybrid API
+                return self.perception.get_clusters_as_dict(
+                    zones=[ThreatZone.DANGER, ThreatZone.CAUTION],  # Only danger/caution zones
+                    include_bbox=include_2d,
+                    camera_transform=camera_transform,
+                    camera_intrinsics=camera_intrinsics
+                )
+
+            else:
+                logging.warning(f"[Perception] Unknown mode '{mode}'")
+                return []
+
+        except Exception as e:
+            logging.error(f"[Perception] Error getting objects: {e}")
+            return []
+
         # Object distance thresholds for notifications
         self.distance_alerts = {"warning": 20.0,"critical":7.5 }
         # Increase sensitivity for pedestrians
@@ -689,14 +841,26 @@ class HUD(object):
 
         try:
             cm = self.world.camera_manager
-            cam_actor = cm.sensors.get('left_dash_cam')  # second tile (“main”)
+            cam_actor = cm.sensors.get('left_dash_cam')  # second tile ("main")
             if cam_actor:
                 if not hasattr(self, 'perception') or self.perception is None:
-                    self.perception = Perception(self.world, camera_actor=cam_actor)
-                    logging.info(f"[Vision] bound to left_dash FOV={self.perception.fov_deg:.1f} "
-                                f"size={self.perception.image_width}x{self.perception.image_height}")
+                    # Use factory method to initialize correct perception mode
+                    self.perception = self._initialize_perception(self.world, camera_actor=cam_actor)
+
+                    # Log perception info (mode-dependent)
+                    if hasattr(self.perception, 'fov_deg'):
+                        # Programmatic mode has camera info
+                        logging.info(f"[Vision] bound to left_dash FOV={self.perception.fov_deg:.1f} "
+                                    f"size={self.perception.image_width}x{self.perception.image_height}")
                 else:
-                    self.perception.set_camera(cam_actor)
+                    # Update camera if perception already exists (programmatic mode only)
+                    if hasattr(self.perception, 'set_camera'):
+                        self.perception.set_camera(cam_actor)
+
+            # Update perception state once per tick (for new perception modes)
+            if self.perception and hasattr(self.perception, 'update'):
+                self.perception.update()
+
         except Exception as e:
             logging.debug(f"[Vision] bind skipped: {e}")
         self.control = controller
@@ -813,9 +977,25 @@ class HUD(object):
                 if getattr(self, 'perception', None):
                     cam_actor = cm.get_camera_actor_for_queue('main') or cm.sensors.get('left_dash_cam')
                     if cam_actor:
-                        self.perception.set_camera(cam_actor)
-                    # [PERF_HOT] Expensive: compute() queries CARLA world actors + projects to 2D
-                    objs = self.perception.compute(max_objects=24, include_2d=True)
+                        # Update camera for programmatic mode
+                        if hasattr(self.perception, 'set_camera'):
+                            self.perception.set_camera(cam_actor)
+
+                    # Get camera info for projection
+                    camera_transform = cam_actor.get_transform() if cam_actor else None
+                    camera_intrinsics = {
+                        'width': W,
+                        'height': H,
+                        'fov_deg': getattr(self, '_fov', 90.0)
+                    }
+
+                    # Use unified interface (supports all perception modes)
+                    objs = self._get_perception_objects(
+                        max_objects=24,
+                        include_2d=True,
+                        camera_transform=camera_transform,
+                        camera_intrinsics=camera_intrinsics
+                    )
 
                     if objs:
                         font = self.panel_fonts.get('small_label', pygame.font.Font(None, 16))
@@ -879,10 +1059,25 @@ class HUD(object):
                 # ---- Vision overlay ON THIS TILE ----
                 if getattr(self, 'perception', None):
                     # use this tile's camera for pose/FOV so boxes align
-                    self.perception.set_camera(cam_actor)
+                    if hasattr(self.perception, 'set_camera'):
+                        self.perception.set_camera(cam_actor)
+
+                    # Get camera info for projection
+                    camera_transform = cam_actor.get_transform() if cam_actor else None
+                    camera_intrinsics = {
+                        'width': surf.get_width(),
+                        'height': surf.get_height(),
+                        'fov_deg': getattr(self, '_fov', 90.0)
+                    }
+
                     # [PERF_HOT] CRITICAL: This runs for ALL 4 camera tiles EVERY FRAME!
-                    # Consider: skip side cameras, add distance culling, or throttle to lower FPS
-                    objs = self.perception.compute(max_objects=24, include_2d=True)
+                    # With LIDAR Hybrid, this is now much faster (1-2ms vs 40-60ms)
+                    objs = self._get_perception_objects(
+                        max_objects=24,
+                        include_2d=True,
+                        camera_transform=camera_transform,
+                        camera_intrinsics=camera_intrinsics
+                    )
 
                     if objs:
                         font = self.panel_fonts.get('small_label', pygame.font.Font(None, 16))

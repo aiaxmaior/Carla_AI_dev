@@ -653,7 +653,96 @@ def main():
         help="Skip selection screens and go straight to simulation.",
     )
 
+    # ========================================================================
+    # Perception System Configuration
+    # ========================================================================
+    argparser.add_argument(
+        '--perception-mode',
+        choices=['programmatic', 'metadata', 'minimal-viable', 'lidar-hybrid'],
+        default='lidar-hybrid',
+        help='Perception system mode (default: lidar-hybrid for best performance)'
+    )
+
+    argparser.add_argument(
+        '--danger-distance',
+        type=float,
+        default=15.0,
+        help='DANGER zone threshold in meters (default: 15m, red bbox)'
+    )
+
+    argparser.add_argument(
+        '--caution-distance',
+        type=float,
+        default=30.0,
+        help='CAUTION zone threshold in meters (default: 30m, yellow bbox)'
+    )
+
+    argparser.add_argument(
+        '--safe-distance',
+        type=float,
+        default=100.0,
+        help='SAFE zone threshold in meters (default: 100m, no bbox by default)'
+    )
+
+    argparser.add_argument(
+        '--show-danger-bbox',
+        action='store_true',
+        default=True,
+        help='Show bounding boxes for DANGER zone objects (default: True)'
+    )
+
+    argparser.add_argument(
+        '--no-show-danger-bbox',
+        action='store_true',
+        default=False,
+        help='Disable danger zone bounding boxes'
+    )
+
+    argparser.add_argument(
+        '--show-caution-bbox',
+        action='store_true',
+        default=False,
+        help='Show bounding boxes for CAUTION zone objects (default: False)'
+    )
+
+    argparser.add_argument(
+        '--no-ground-truth-matching',
+        action='store_true',
+        default=False,
+        help='Disable ground truth actor matching in LIDAR mode (faster, no speed data)'
+    )
+
+    argparser.add_argument(
+        '--lidar-range',
+        type=float,
+        default=None,
+        help='LIDAR sensor range in meters (default: matches safe-distance)'
+    )
+
+    argparser.add_argument(
+        '--lidar-points-per-second',
+        type=int,
+        default=56000,
+        help='LIDAR points per second (default: 56000, higher = more accurate but slower)'
+    )
+
+    argparser.add_argument(
+        '--lidar-rotation-frequency',
+        type=float,
+        default=10.0,
+        help='LIDAR rotation frequency in Hz (default: 10Hz)'
+    )
+
     args = argparser.parse_args()
+
+    # Process perception arguments
+    if args.no_show_danger_bbox:
+        args.show_danger_bbox = False
+
+    # Set LIDAR range to match safe distance if not specified
+    if args.lidar_range is None:
+        args.lidar_range = args.safe_distance
+
     game_loop_reached = False
     prewelcome_options = pws.pre_welcome_select()
     # Get the original state of all monitors before doing anything else
