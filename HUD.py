@@ -174,7 +174,7 @@ class HUD(object):
 
         # Store args for perception configuration
         self.args = args
-        self.perception_mode = getattr(args, "perception_mode", "lidar-hybrid")
+        self.perception_mode = getattr(args, "perception_mode", "programmatic")
         rec_path = getattr(args, "record_vision_demo", None)
         if rec_path:
             try:
