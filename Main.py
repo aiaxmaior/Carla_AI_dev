@@ -37,47 +37,60 @@ import os
 import sys
 import subprocess
 import time
-#import json
+
+# import json
 import carla
 import sys_task
-#import math
-#import re
-#import Sensors
+
+# import math
+# import re
+# import Sensors
 import DataIngestion
-#import pandas as pd
+
+# import pandas as pd
 import PreWelcomeSelect as pws
 from TitleScreen import TitleScreen
 from Utility.Monitor import DynamicMonitor
-#from VehicleLibrary import VehicleLibrary
+
+# from VehicleLibrary import VehicleLibrary
 from World import World
 from HUD import HUD
 from Core.Controls.controls_queue import DualControl
 from Core.Simulation.MVD import MVDFeatureExtractor
-from Core.Controls.MozaArduinoVirtualGamepad import HardwareVirtualGamepad    
+from Core.Controls.MozaArduinoVirtualGamepad import HardwareVirtualGamepad
 from evdev import InputDevice, list_devices
 from Helpers import EndScreen
 from PredictiveManager import PredictiveManager
 
 try:
     import pygame
-    from pygame.locals import NOFRAME #K_ESCAPE, K_RETURN, K_KP_ENTER, NOFRAME
+    from pygame.locals import NOFRAME  # K_ESCAPE, K_RETURN, K_KP_ENTER, NOFRAME
 except ImportError:
     raise RuntimeError("cannot import pygame, make sure pygame package is installed")
 from Utility.Font.FontIconLibrary import IconLibrary, FontLibrary
+
 # Global variable to hold the CARLA server process if we launch it
 carla_server_process = None
 iLib = IconLibrary()
 fLib = FontLibrary()
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - [%(module)s:%(funcName)s:%(lineno)d] - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    format="%(asctime)s - %(levelname)s - [%(module)s:%(funcName)s:%(lineno)d] - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 
 # ==============================================================================
 # -- Title Screen Function -----------------------------------------------------
 # ==============================================================================
-dev_keys = {'ENTER': {'type': 'button', 'joy_idx': 0, 'id': 37}, 'UP': {'type': 'button', 'joy_idx': 0, 'id': 47}, 'DOWN': {'type': 'button', 'joy_idx': 0, 'id': 46}, 'LEFT': {'type': 'button', 'joy_idx': 0, 'id': 21}, 'RIGHT': {'type': 'button', 'joy_idx': 0, 'id': 34}, 'ESCAPE': {'type': 'button', 'joy_idx': 0, 'id': 36}}
+dev_keys = {
+    "ENTER": {"type": "button", "joy_idx": 0, "id": 37},
+    "UP": {"type": "button", "joy_idx": 0, "id": 47},
+    "DOWN": {"type": "button", "joy_idx": 0, "id": 46},
+    "LEFT": {"type": "button", "joy_idx": 0, "id": 21},
+    "RIGHT": {"type": "button", "joy_idx": 0, "id": 34},
+    "ESCAPE": {"type": "button", "joy_idx": 0, "id": 36},
+}
+
 
 def ensure_evdev_map(force=False, moza_event=None, arduino_event=None):
     """
@@ -96,7 +109,9 @@ def ensure_evdev_map(force=False, moza_event=None, arduino_event=None):
     os.makedirs(cfg_dir, exist_ok=True)
     wizard = os.path.join(root, "Tools", "evdev_autotest.py")
     if not os.path.exists(wizard):
-        logging.warning("⚠️evdev_autotest.py not found at Tools/; skipping auto-capture.")
+        logging.warning(
+            "⚠️evdev_autotest.py not found at Tools/; skipping auto-capture."
+        )
         return False
 
     # Build the command
@@ -115,8 +130,10 @@ def ensure_evdev_map(force=False, moza_event=None, arduino_event=None):
     if any(a in sys.argv for a in ("-v", "--verbose")):
         cmd.append("-v")
 
-    print("\n>>> Running input capture (evdev_autotest). "
-          "Follow prompts for LEFT/RIGHT/PUSH/PULL and seatbelt…")
+    print(
+        "\n>>> Running input capture (evdev_autotest). "
+        "Follow prompts for LEFT/RIGHT/PUSH/PULL and seatbelt…"
+    )
     try:
         rc = subprocess.call(cmd)
         if rc != 0:
@@ -125,8 +142,10 @@ def ensure_evdev_map(force=False, moza_event=None, arduino_event=None):
         logging.exception(f"⚠️Failed to run evdev_autotest: {e}")
 
     if not os.path.exists(cfg_file):
-        logging.warning("⚠️input_devices.json was not created. "
-                        "Run Tools/evdev_autotest.py manually if needed.")
+        logging.warning(
+            "⚠️input_devices.json was not created. "
+            "Run Tools/evdev_autotest.py manually if needed."
+        )
         return False
 
     print(f" ✅🕹️ Captured device mapping → {cfg_file}")
@@ -138,7 +157,7 @@ def game_loop(args, client, monitors, joystick_mappings=None):
     """
     Main simulation loop. Handles a single session from start to end.
     """
-#    logging.info("✅GAME LOOP: Initializing new session.")
+    #    logging.info("✅GAME LOOP: Initializing new session.")
     # Yeah,
     os.environ["SDL_VIDEO_MINIMIZE_ON_FOCUS_LOSS"] = "0"
 
@@ -148,7 +167,6 @@ def game_loop(args, client, monitors, joystick_mappings=None):
     original_settings = None
     carla_world = None
     try:
-
         """ Display set-up Legacy Code: KEEP FOR BACKUP
         # Multi-monitor setup for panoramic view
         single_monitor_width, single_monitor_height = args.width, args.height
@@ -159,7 +177,7 @@ def game_loop(args, client, monitors, joystick_mappings=None):
             f"Creating 4 monitor wide window for panoramic view: {total_width}x{total_height}"
         )
         """
-#
+        #
         try:
             pygame.display.init()
             desktop_sizes = pygame.display.get_desktop_sizes() or []
@@ -177,33 +195,48 @@ def game_loop(args, client, monitors, joystick_mappings=None):
         if getattr(args, "single", False):
             layout_strategy = "single"
         args.layout_mode = layout_strategy
-        print(f"🎯 Using {layout_strategy} layout mode ({total_logical} logical displays)")
-
+        print(
+            f"🎯 Using {layout_strategy} layout mode ({total_logical} logical displays)"
+        )
 
         single_monitor_width, single_monitor_height = args.width, args.height
         if args.layout_mode == "single":
             total_width = single_monitor_width
             total_height = single_monitor_height
-            logging.info(f" ✅🖥️ Layout: {args.layout_mode}  Window={total_width}x{total_height}")
-            iLib.ilog("info", f"Layout: {args.layout_mode}  Window={total_width}x{total_height}", "status_alerts","debug",1 )
+            logging.info(
+                f" ✅🖥️ Layout: {args.layout_mode}  Window={total_width}x{total_height}"
+            )
+            iLib.ilog(
+                "info",
+                f"Layout: {args.layout_mode}  Window={total_width}x{total_height}",
+                "status_alerts",
+                "debug",
+                1,
+            )
         else:
-            total_width = single_monitor_width*4
+            total_width = single_monitor_width * 4
             total_height = single_monitor_height
-            logging.info(f" ✅🖥️🖥️🖥️🖥️ Layout: {args.layout_mode}  Window={total_width}x{total_height}")
-            iLib.ilog("info", f"Layout: {args.layout_mode}  Window={total_width}x{total_height}", "status_alerts","debug",4)
-        
-        
-            
+            logging.info(
+                f" ✅🖥️🖥️🖥️🖥️ Layout: {args.layout_mode}  Window={total_width}x{total_height}"
+            )
+            iLib.ilog(
+                "info",
+                f"Layout: {args.layout_mode}  Window={total_width}x{total_height}",
+                "status_alerts",
+                "debug",
+                4,
+            )
+
         pygame.display.set_icon(pygame.image.load("./images/icon.png"))
 
         display_flags = pygame.HWSURFACE | pygame.DOUBLEBUF | NOFRAME
-        #display = pygame.display.set_mode(
+        # display = pygame.display.set_mode(
         #    (total_width,
-         #    total_height),
-          #  display_flags,
-           # args.display,
-            #)
-        args.screens = monitors.total_logical_displays 
+        #    total_height),
+        #  display_flags,
+        # args.display,
+        # )
+        args.screens = monitors.total_logical_displays
         display = pygame.display.set_mode(
             (total_width, total_height),
             display_flags,
@@ -213,34 +246,40 @@ def game_loop(args, client, monitors, joystick_mappings=None):
         pygame.display.set_caption("CARLA MVD Demo")
 
         logging.info(f"width x height = {total_width}x{total_height}")
-        xrandr_output = subprocess.check_output(['xrandr', '--query']).decode('utf-8')
-#        logging.info(f"🖥️🖥️🖥️🖥️🖥️🖥️xrandr output: {xrandr_output}")
+        xrandr_output = subprocess.check_output(["xrandr", "--query"]).decode("utf-8")
+        #        logging.info(f"🖥️🖥️🖥️🖥️🖥️🖥️xrandr output: {xrandr_output}")
 
         if args.dev:
             from VehicleLibrary import VehicleLibrary
-            
+
             logging.info("🚀 Developer mode: skipping selection screen, using defaults")
             persistent_keys = dev_keys
             chosen_vehicle_id = "ford_e450_super_duty"
             chosen_map_id = "Town10HD"
-            
+
             # Get the correct blueprint from VehicleLibrary
             vlib = VehicleLibrary()
             try:
                 vehicle_info = vlib.get_vehicle("ford_e450_super_duty")
-                carla_blueprint = vehicle_info.get("carla_blueprint", "vehicle.ford.ambulance")
+                carla_blueprint = vehicle_info.get(
+                    "carla_blueprint", "vehicle.ford.ambulance"
+                )
             except:
                 carla_blueprint = "vehicle.ford.ambulance"  # Fallback
         else:
             # Normal flow
             title = TitleScreen(display, client, args)
-            persistent_keys, chosen_vehicle_id, carla_blueprint, chosen_map_id = title.show_title_screen()
+            persistent_keys, chosen_vehicle_id, carla_blueprint, chosen_map_id = (
+                title.show_title_screen()
+            )
 
         if args.xodr_path:
             if os.path.exists(args.xodr_path):
-                with open(args.xodr_path, encoding='utf-8') as od_file:
+                with open(args.xodr_path, encoding="utf-8") as od_file:
                     data = od_file.read()
-                logging.info(f" 🗺️Loading map from OpenDRIVE file: {os.path.basename(args.xodr_path)}")
+                logging.info(
+                    f" 🗺️Loading map from OpenDRIVE file: {os.path.basename(args.xodr_path)}"
+                )
                 # Parameters for procedural generation
                 params = carla.OpendriveGenerationParameters(
                     vertex_distance=15.0,
@@ -248,20 +287,22 @@ def game_loop(args, client, monitors, joystick_mappings=None):
                     wall_height=1.0,
                     additional_width=0.6,
                     smooth_junctions=False,
-                    enable_mesh_visibility=False
+                    enable_mesh_visibility=False,
                 )
                 carla_world = client.generate_opendrive_world(data, params)
             else:
                 logging.error(f"XODR file not found at: {args.xodr_path}")
-                return "exit", joystick_mappings # Exit if file not found
+                return "exit", joystick_mappings  # Exit if file not found
         else:
             if chosen_map_id:
                 logging.info(f" 🗺️Loading chosen map: {chosen_map_id}")
                 carla_world = client.load_world(chosen_map_id)
             else:
-                logging.info(f"❓No chosen map returned, loading default from cmdline: {args.map}")
+                logging.info(
+                    f"❓No chosen map returned, loading default from cmdline: {args.map}"
+                )
                 carla_world = client.load_world(args.map)
-        
+
         original_settings = carla_world.get_settings()
         # --- End of Map Loading Logic ---
 
@@ -275,7 +316,13 @@ def game_loop(args, client, monitors, joystick_mappings=None):
         # Object Initialization
         hud = HUD(total_width, total_height, args)
         world_obj = World(
-            carla_world, hud, chosen_vehicle_id, carla_blueprint, args.fov, not args.novehicleparams, args
+            carla_world,
+            hud,
+            chosen_vehicle_id,
+            carla_blueprint,
+            args.fov,
+            not args.novehicleparams,
+            args,
         )
 
         """
@@ -293,10 +340,9 @@ def game_loop(args, client, monitors, joystick_mappings=None):
         ### See vehicle_library.txt for a list of pre-configured vehicles, steering-vehicle configuration
         ### reasoning and validation
         """
-        
+
         # Load customized vehicle specification configurations from custom library (./configs/vehicle_configs)
         world_obj.load_vehicle_config(chosen_vehicle_id)
-
 
         ## (deprecated, will soon be incorporated into vehicle_configs)
         if world_obj.player and args.max_rpm > 0:
@@ -304,7 +350,7 @@ def game_loop(args, client, monitors, joystick_mappings=None):
             physics_control.max_rpm = args.max_rpm
             world_obj.player.apply_physics_control(physics_control)
             logging.info(f"⚖️ Applied custom max_rpm of {args.max_rpm} to vehicle.")
-        
+
         # Starting main gameloop. Custom configurations loaded.
 
         hardware_bridge = None
@@ -312,26 +358,29 @@ def game_loop(args, client, monitors, joystick_mappings=None):
         try:
             hardware_bridge = HardwareVirtualGamepad()
             if hardware_bridge.start():
-                iLib.ilog('info',"Hardware Virtual Gamepad bridge started",'alerts','s')
+                iLib.ilog(
+                    "info", "Hardware Virtual Gamepad bridge started", "alerts", "s"
+                )
                 # pygame detect time
                 time.sleep(0.5)
                 pygame.joystick.quit()
                 pygame.joystick.init()
             else:
-                iLib.ilog('warning','Hardware bridge failed to start','alerts','wn')
+                iLib.ilog("warning", "Hardware bridge failed to start", "alerts", "wn")
         except Exception as e:
-            iLib.ilog('error',f'Hardware bridge error: {e}','items','js')
-            hardware_bridge = None        
+            iLib.ilog("error", f"Hardware bridge error: {e}", "items", "js")
+            hardware_bridge = None
 
         # Instantiate controller
-        controller = DualControl(world_obj, args, joystick_mappings, persistent_keys, total_height)
+        controller = DualControl(
+            world_obj, args, joystick_mappings, persistent_keys, total_height
+        )
 
         # After HUD is fully ready
         world_obj.finalize_initialization(controller)
 
-
         controller.finalize_setup()
-        if getattr(args, "layout_mode","quad") == "single":
+        if getattr(args, "layout_mode", "quad") == "single":
             world_obj.enable_single_screen_cameras(window_size=display.get_size())
         mvd_feature_extractor = MVDFeatureExtractor(args.mvd_config)
         mvd_feature_extractor.reset_scores()
@@ -352,20 +401,28 @@ def game_loop(args, client, monitors, joystick_mappings=None):
         while True:
             clock.tick(50)
 
-            #Handle reset state
+            # Handle reset state
             if world_obj.is_reset:
                 if world_obj.should_reset_scores:
                     mvd_feature_extractor.reset_scores()
                     hud.reset()
                     world_obj.should_reset_scores = False
                 world_obj.restart()
-                controller = DualControl(world_obj, args, joystick_mappings, persistent_keys, total_height)
-                logging.info("BLINKER map snapshot: %s", 
-                             {k:v for k,v in (controller.mapped_controls or {}).items() if "BLINKER" in k})
+                controller = DualControl(
+                    world_obj, args, joystick_mappings, persistent_keys, total_height
+                )
+                logging.info(
+                    "BLINKER map snapshot: %s",
+                    {
+                        k: v
+                        for k, v in (controller.mapped_controls or {}).items()
+                        if "BLINKER" in k
+                    },
+                )
                 continue
 
             world_obj.player.show_debug_telemetry(True)
-            
+
             world_snapshot = carla_world.get_snapshot() if args.sync else None
             if args.sync:
                 carla_world.tick()
@@ -384,23 +441,30 @@ def game_loop(args, client, monitors, joystick_mappings=None):
             display_fps = clock.get_fps()
             if world_obj.player and world_obj.player.is_alive:
                 controller.process_commands(world_obj.player, args)
-                world_obj.tick(clock, controller.updated_hud_information(), controller, display_fps)
+                world_obj.tick(
+                    clock, controller.updated_hud_information(), controller, display_fps
+                )
 
                 if world_obj.lane_invasion_sensor_instance:
                     world_obj.lane_invasion_sensor_instance.tick()
 
-
                 # --- Data Gathering for Logging and Scoring ---
-                seatbelt_state = hardware_bridge._seatbelt_fastened
+                # Check seatbelt state (with override option)
+                if args.seatbelt_override:
+                    seatbelt_state = True
+                else:
+                    seatbelt_state = (
+                        hardware_bridge._seatbelt_fastened if hardware_bridge else False
+                    )
                 # [PERF_HOT][DEBUG_ONLY] CRITICAL: This logs EVERY FRAME! Should be throttled or debug-only
                 # TODO: Move to debug mode or throttle to once per second
                 logging.info(f"Seatbelt state: {'ON' if seatbelt_state else 'OFF'}")
                 controller._seatbelt_state = seatbelt_state
                 velocity = world_obj.player.get_velocity()
                 speed_kmh = 3.6 * velocity.length()
-                #collision_data = (
+                # collision_data = (
                 #    world_obj.collision_sensor_instance.get_collision_data_and_reset()
-                #)
+                # )
                 collision_data = world_obj.get_collision_data_and_reset()
 
                 if collision_data.get("collided"):
@@ -423,33 +487,30 @@ def game_loop(args, client, monitors, joystick_mappings=None):
                     blinker_state,
                 )
 
-                
-
                 standardized_indices = mvd_feature_extractor.get_standardized_indices()
                 overall_dp_score = mvd_feature_extractor.get_overall_mvd_score()
-                
+
                 # --- RESTORED: Per-frame data logging ---
                 # [PERF_HOT] Dict allocation every frame - consider object pooling or reuse
                 control_datalog = controller.get_datalog()
                 mvd_datalog = mvd_feature_extractor.get_mvd_datalog_metrics()
                 metrics = {
-                    'frame': world_snapshot.frame,
-                    'timestamp': world_snapshot.timestamp.elapsed_seconds,
-                    'lane_violation':lane_violation_state,
-                    'lane_change': lane_change_state,
-                    'collision_data': collision_data,
-                    'mvd_datalog': mvd_datalog,
-                    'controller_datalog':control_datalog,
-                    }
-                data_ingestor.log_frame(world_obj,metrics)
+                    "frame": world_snapshot.frame,
+                    "timestamp": world_snapshot.timestamp.elapsed_seconds,
+                    "lane_violation": lane_violation_state,
+                    "lane_change": lane_change_state,
+                    "collision_data": collision_data,
+                    "mvd_datalog": mvd_datalog,
+                    "controller_datalog": control_datalog,
+                }
+                data_ingestor.log_frame(world_obj, metrics)
                 if predictive_manager:
                     predictive_manager.tick(world_snapshot.frame)
                     predictive_output = predictive_manager.get_indices()
                     hud.update_predictive_indices(predictive_output)
-                hud.update_mvd_scores_for_display(
-                    data_ingestor)
+                hud.update_mvd_scores_for_display(data_ingestor)
 
-                #session_tick_data.append(metrics)
+                # session_tick_data.append(metrics)
                 # --- End of logging block ---
 
             world_obj.render(display)
@@ -458,7 +519,9 @@ def game_loop(args, client, monitors, joystick_mappings=None):
         # --- End Screen Logic ---
         logging.info("🏁 Session ended. Presenting end screen.")
         final_overall_scores = mvd_feature_extractor.get_mvd_datalog_metrics()
-        end_screen = EndScreen(display, final_overall_scores, hud.panel_fonts, data_ingestor)
+        end_screen = EndScreen(
+            display, final_overall_scores, hud.panel_fonts, data_ingestor
+        )
         action = end_screen.run(persistent_keys)
         return action, joystick_mappings
 
@@ -466,13 +529,13 @@ def game_loop(args, client, monitors, joystick_mappings=None):
         logging.critical(f"☠️ Critical error in game loop: {e}", exc_info=True)
         return "exit", joystick_mappings
     finally:
-#        if hardware_bridge:
-#            hardware_bridge.stop()
-            
-        if 'data_ingestor' in locals():
+        #        if hardware_bridge:
+        #            hardware_bridge.stop()
+
+        if "data_ingestor" in locals():
             data_ingestor.save_to_csv()
         # --- RESTORED: Write session log to file ---
-        #if session_tick_data:
+        # if session_tick_data:
         #    consolidate_and_save_log(session_tick_data)
         # --- End of log writing block ---
 
@@ -551,8 +614,7 @@ def main():
     argparser.add_argument(
         "--max-rpm", default=4000.0, type=float, help="Maximum engine RPM"
     )
-    argparser.add_argument(
-        "--map", metavar="M", default="Town10HD", help="Map")
+    argparser.add_argument("--map", metavar="M", default="Town10HD", help="Map")
     argparser.add_argument(
         "--noackermann", action="store_true", help="Disable Ackermann Steering Physics"
     )
@@ -560,7 +622,9 @@ def main():
         "--novehicleparams", action="store_true", help="Disable custom vehicle physics"
     )
     argparser.add_argument(
-        "--invert-steer", action="store_true", help="Invert steering input for truck mounts."
+        "--invert-steer",
+        action="store_true",
+        help="Invert steering input for truck mounts.",
     )
     argparser.add_argument(
         "--mvd-config",
@@ -572,7 +636,7 @@ def main():
         "--quality",
         metavar="QUALITY",
         default="Epic",
-        type = str,
+        type=str,
         help="Define CARLA render quality",
     )
 
@@ -585,27 +649,28 @@ def main():
     )
 
     argparser.add_argument(
-        '-x', '--xodr-path',
-        metavar='XODR_FILE_PATH',
-        help='load a new map with a minimum physical road representation of the provided OpenDRIVE'
+        "-x",
+        "--xodr-path",
+        metavar="XODR_FILE_PATH",
+        help="load a new map with a minimum physical road representation of the provided OpenDRIVE",
     )
 
     argparser.add_argument(
         "--windowed",
-        action='store_true',  # Correct way to handle a boolean flag
+        action="store_true",  # Correct way to handle a boolean flag
         help="Run the CARLA server in a windowed mode.",
     )
     argparser.add_argument(
         "--ResX",
         metavar="X",
-        default=None,         # Correct default for an optional integer
+        default=None,  # Correct default for an optional integer
         type=int,
         help="Store X resolution for windowed render",
     )
     argparser.add_argument(
         "--ResY",
         metavar="Y",
-        default=None,         # Correct default for an optional integer
+        default=None,  # Correct default for an optional integer
         type=int,
         help="Set Y resolution for windowed render",
     )
@@ -613,14 +678,14 @@ def main():
     argparser.add_argument(
         "--screens",
         metavar="SCR",
-        default=4,         # Correct default for an optional integer
+        default=4,  # Correct default for an optional integer
         type=int,
         help="Define Number of Screens",
     )
     argparser.add_argument(
         "--steer",
         metavar="TRN",
-        default= None,         # Correct default for an optional integer
+        default=None,  # Correct default for an optional integer
         type=float,
         help="Define steering angle",
     )
@@ -628,29 +693,36 @@ def main():
     argparser.add_argument(
         "--vision-compare",
         action="store_true",
-        help="Show split view: left raw front-left feed, right vision overlay.")
-    
+        help="Show split view: left raw front-left feed, right vision overlay.",
+    )
+
     argparser.add_argument(
         "--record-vision-demo",
         metavar="OUT.mp4",
         default=None,
-        help="Write the split view video (requires imageio[ffmpeg]).")
+        help="Write the split view video (requires imageio[ffmpeg]).",
+    )
 
     argparser.add_argument(
         "--single",
         action="store_true",
-        help="Force single-screen layout (driver view + rear PIP)"
+        help="Force single-screen layout (driver view + rear PIP)",
     )
     argparser.add_argument(
-    "--title-screen-index",
-    type=int,
-    default=1,
-    help="Which monitor to use for the Title Screen (0-based). Defaults to 0 in single-screen, 1 in quad."
-)
+        "--title-screen-index",
+        type=int,
+        default=1,
+        help="Which monitor to use for the Title Screen (0-based). Defaults to 0 in single-screen, 1 in quad.",
+    )
     argparser.add_argument(
-    "--dev",
-        action='store_true',  # Correct way to handle a boolean flag
+        "--dev",
+        action="store_true",  # Correct way to handle a boolean flag
         help="Skip selection screens and go straight to simulation.",
+    )
+    argparser.add_argument(
+        "--seatbelt-override",
+        action="store_true",  # Correct way to handle a boolean flag
+        help="Force seatbelt state to ON for testing.",
     )
 
     # ========================================================================
@@ -757,12 +829,14 @@ def main():
         # ----------------------------------------------------------------------
         # Set the desired layout for the simulation
         # ----------------------------------------------------------------------
-        print(f"\nConfiguring monitors for simulation with resolution: {simulation_resolution}")
+        print(
+            f"\nConfiguring monitors for simulation with resolution: {simulation_resolution}"
+        )
         # This single function call replaces your old logic
         monitors.arrange_monitors_horizontally(simulation_resolution, original_layout)
-#        iLib.ilog("warning", f"simulation resolution {simulation_resolution}",'alerts','wn',3)
+        #        iLib.ilog("warning", f"simulation resolution {simulation_resolution}",'alerts','wn',3)
         # Give the window manager a moment to adjust
-        time.sleep(2) 
+        time.sleep(2)
 
         # ----------------------------------------------------------------------
         # --- ALL SIMULATION LOGIC IS NOW INSIDE THE TRY BLOCK ---
@@ -776,7 +850,7 @@ def main():
 
         pygame.init()
         pygame.joystick.init()
-# --- Pre-Welcome quick setup ---
+        # --- Pre-Welcome quick setup ---
         """
         def _existing_res_from_args(a):
             # Try args.res "WxH", else fall back to args.width/height, else 1920x1080
@@ -799,7 +873,9 @@ def main():
         else:
             # Keep existing CLI values or sensible defaults
             try:
-                args.width, args.height = [int(x) for x in getattr(args, "res", "1920x1080").split("x")]
+                args.width, args.height = [
+                    int(x) for x in getattr(args, "res", "1920x1080").split("x")
+                ]
             except Exception:
                 args.width, args.height = 1920, 1080
             args.ResX = getattr(args, "ResX", args.width)
@@ -838,7 +914,7 @@ def main():
             try:
                 client = carla.Client(args.host, args.port)
                 client.set_timeout(3000.0)
-#                logging.info(f"Successfully connected to CARLA Server {client.get_server_version()}")
+                #                logging.info(f"Successfully connected to CARLA Server {client.get_server_version()}")
                 break
             except RuntimeError as e:
                 logging.warning(f"⚠️Connection failed: {e}. Retrying...")
@@ -851,7 +927,9 @@ def main():
         joystick_mappings = None
         while True:
             if client:
-                logging.info(f"Simulation running, CARLA Server {client.get_server_version()}")
+                logging.info(
+                    f"Simulation running, CARLA Server {client.get_server_version()}"
+                )
             action, new_mappings = game_loop(args, client, monitors, joystick_mappings)
             joystick_mappings = new_mappings
             if action == "exit":
@@ -865,12 +943,16 @@ def main():
         # This block ALWAYS runs, ensuring resolution is restored
         monitors.restore_monitor_layout(original_layout)
         # --- Your existing cleanup logic ---
-        if 'client' in locals() and client:
+        if "client" in locals() and client:
             client.stop_recorder()
         if carla_server_process:
-            sys_task.terminate_popen_process_gracefully(carla_server_process, "CARLA Server")
+            sys_task.terminate_popen_process_gracefully(
+                carla_server_process, "CARLA Server"
+            )
         sys_task.sig_kill_engine(sys_task.get_running_processes())
         pygame.quit()
         logging.info("🏁✅Main script execution finished.")
+
+
 if __name__ == "__main__":
     main()

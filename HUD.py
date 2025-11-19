@@ -800,6 +800,153 @@ class HUD(object):
                 engine_rpm = wheel_rpm * gear_ratio * final_ratio
                 return engine_rpm
             
+    def _render_radial_gauge(self, display, center_x, center_y, radius, value, max_value,
+                            label, unit, major_tick_interval=None, redline_threshold=None):
+        """
+        Render a 270-degree radial gauge (speedometer or tachometer).
+
+        Args:
+            display: Pygame display surface
+            center_x, center_y: Center point of the gauge
+            radius: Radius of the gauge
+            value: Current value to display
+            max_value: Maximum value on the gauge
+            label: Label for the gauge (e.g., "SPEED", "RPM")
+            unit: Unit label (e.g., "MPH", "x1000")
+            major_tick_interval: Interval for major ticks (auto if None)
+            redline_threshold: Value at which redline zone starts (None for speed gauge)
+        """
+        import math
+
+        # Auto-detect tick interval if not specified
+        if major_tick_interval is None:
+            if max_value <= 100:
+                major_tick_interval = 10
+            elif max_value <= 1000:
+                major_tick_interval = 100
+            else:
+                major_tick_interval = 500
+
+        minor_tick_interval = major_tick_interval // 2
+
+        # Constants
+        START_ANGLE = 225  # Start at bottom-left (in degrees)
+        SWEEP_DEGREES = 270
+
+        def deg_to_rad(deg):
+            return math.radians(deg)
+
+        # Colors
+        bg_color = (40, 40, 40)
+        tick_color = (200, 200, 200)
+        danger_color = (255, 50, 50)
+        needle_color = (255, 60, 60)
+        text_color = (255, 255, 255)
+
+        # Draw outer circle background
+        pygame.draw.circle(display, bg_color, (int(center_x), int(center_y)), radius)
+        pygame.draw.circle(display, (80, 80, 80), (int(center_x), int(center_y)), radius, 2)
+
+        # Draw tick marks and numbers
+        tick_value = 0
+        while tick_value <= max_value:
+            # Calculate angle for this value
+            angle_deg = START_ANGLE - (tick_value / max_value) * SWEEP_DEGREES
+            angle_rad = deg_to_rad(angle_deg)
+
+            # Major tick mark
+            tick_start_radius = radius - 15
+            tick_end_radius = radius - 5
+
+            start_x = center_x + tick_start_radius * math.cos(angle_rad)
+            start_y = center_y - tick_start_radius * math.sin(angle_rad)
+            end_x = center_x + tick_end_radius * math.cos(angle_rad)
+            end_y = center_y - tick_end_radius * math.sin(angle_rad)
+
+            # Color tick marks - redline zone if applicable
+            if redline_threshold and tick_value >= redline_threshold:
+                tick_col = danger_color
+            else:
+                tick_col = tick_color
+
+            pygame.draw.line(display, tick_col, (start_x, start_y), (end_x, end_y), 3)
+
+            # Draw numbers at major ticks
+            if tick_value % (major_tick_interval * 2) == 0 or tick_value == max_value:
+                label_radius = radius - 30
+                label_x = center_x + label_radius * math.cos(angle_rad)
+                label_y = center_y - label_radius * math.sin(angle_rad)
+
+                # For RPM, show in thousands (e.g., "6" for 6000)
+                if max_value >= 1000 and label == "RPM":
+                    label_text = str(tick_value // 1000)
+                else:
+                    label_text = str(tick_value)
+
+                label_surf = self.panel_fonts["small_label"].render(label_text, True, tick_col)
+                label_rect = label_surf.get_rect(center=(int(label_x), int(label_y)))
+                display.blit(label_surf, label_rect)
+
+            tick_value += major_tick_interval
+
+        # Draw minor tick marks
+        tick_value = 0
+        while tick_value <= max_value:
+            if tick_value % major_tick_interval != 0:  # Skip major ticks
+                angle_deg = START_ANGLE - (tick_value / max_value) * SWEEP_DEGREES
+                angle_rad = deg_to_rad(angle_deg)
+
+                tick_start_radius = radius - 12
+                tick_end_radius = radius - 5
+
+                start_x = center_x + tick_start_radius * math.cos(angle_rad)
+                start_y = center_y - tick_start_radius * math.sin(angle_rad)
+                end_x = center_x + tick_end_radius * math.cos(angle_rad)
+                end_y = center_y - tick_end_radius * math.sin(angle_rad)
+
+                pygame.draw.line(display, tick_color, (start_x, start_y), (end_x, end_y), 1)
+
+            tick_value += minor_tick_interval
+
+        # Draw the needle
+        clamped_value = min(value, max_value)
+        needle_angle_deg = START_ANGLE - (clamped_value / max_value) * SWEEP_DEGREES
+        needle_angle_rad = deg_to_rad(needle_angle_deg)
+
+        needle_length = radius - 20
+        needle_x = center_x + needle_length * math.cos(needle_angle_rad)
+        needle_y = center_y - needle_length * math.sin(needle_angle_rad)
+
+        # Draw needle with glow effect
+        for i in range(5, 0, -1):
+            glow_surf = pygame.Surface((radius * 2 + 20, radius * 2 + 20), pygame.SRCALPHA)
+            glow_color = (*needle_color, int(30 * (i / 5)))
+            pygame.draw.line(glow_surf, glow_color,
+                           (radius + 10, radius + 10),
+                           (radius + 10 + (needle_x - center_x), radius + 10 + (needle_y - center_y)),
+                           i * 2)
+            display.blit(glow_surf, (int(center_x - radius - 10), int(center_y - radius - 10)))
+
+        # Main needle
+        pygame.draw.line(display, needle_color, (center_x, center_y), (needle_x, needle_y), 4)
+
+        # Center hub
+        pygame.draw.circle(display, (60, 60, 60), (int(center_x), int(center_y)), 12)
+        pygame.draw.circle(display, needle_color, (int(center_x), int(center_y)), 8)
+        pygame.draw.circle(display, (30, 30, 30), (int(center_x), int(center_y)), 5)
+
+        # Digital readout in center
+        value_text = f"{int(value)}"
+        value_surf = self.panel_fonts["main_score"].render(value_text, True, text_color)
+        unit_surf = self.panel_fonts["small_label"].render(unit, True, (180, 180, 180))
+
+        # Position below center
+        value_rect = value_surf.get_rect(center=(int(center_x), int(center_y + 30)))
+        unit_rect = unit_surf.get_rect(center=(int(center_x), int(center_y + 60)))
+
+        display.blit(value_surf, value_rect)
+        display.blit(unit_surf, unit_rect)
+
     def _render_predictive_panel(self, display, x, y):
         """Render predictive safety indices"""
         if not self._predictive_indices:
@@ -1101,13 +1248,15 @@ class HUD(object):
         # --- 2) Render the HUD panel, notifications, etc. (This code now runs always) ---
         if self._show_info and getattr(self, '_info_text', None):
             # Layout across 4 screens
-            main_screen_offset_x = self.dim[0] // 4
             single_screen_width = self.dim[0] // 4
 
-            panel_h = int(self.dim[1] * 0.4)
-            panel_w = int(single_screen_width * 0.25)
-            panel_x = main_screen_offset_x + (single_screen_width - panel_w) / 2
-            panel_y = int(self.dim[1] * 0.58)
+            # Reduced width (70% of previous), shorter panel for ultrawide display
+            panel_w = int(single_screen_width * 0.84)  # 84% of single screen (70% of 1.2)
+            panel_h = int(self.dim[1] * 0.25)  # 25% height
+            # Center panel on full window width (ultrawide center)
+            panel_x = (self.dim[0] - panel_w) / 2
+            # Positioned lower on screen
+            panel_y = int(self.dim[1] * 0.68)
             panel_bg_color = (20, 20, 20, 150)
             panel_border_color = (0, 150, 255, 200)
             padding = math.floor(20*self.scale_factor)
@@ -1117,24 +1266,71 @@ class HUD(object):
             pygame.draw.rect(info_surf, panel_border_color, info_surf.get_rect(), width=2, border_radius=15)
             display.blit(info_surf, (panel_x, panel_y))
 
-            v_offset = panel_y + padding
-            h_offset = panel_x + padding
+            # New layout: RPM Gauge (35%) - Stats/Scores (30%) - Speedometer (35%)
+            section_y = panel_y + padding
 
-            for key, value in self._info_text.items():
-                renderer = self.info_renderers.get(key)
-                if renderer:
-                    v_offset = renderer(display, h_offset, v_offset, value, panel_x, panel_w, padding)
-                else:
-                    v_offset = self._render_text(
-                        display, h_offset, v_offset, f"{key}: {value}", self.panel_fonts["small_label"], (200, 200, 200), 10
-                    )
-            
-            v_offset = self._draw_notifications(display, h_offset, v_offset)
+            # Get values
+            speed_mph = self._info_text.get("speed_mph", 0)
+            gear = self._info_text.get("gear", "N")
+            rpm_value = self._info_text.get("RPM", "0")
+            try:
+                rpm = float(rpm_value) if rpm_value != "N/A" else 0
+            except:
+                rpm = 0
+
+            # Gauge radius - 50% larger than before (was 0.42, now 0.63 of panel height)
+            gauge_radius = int(panel_h * 0.63)
+
+            # LEFT: RPM Gauge (0-6000, redline at 5250)
+            rpm_center_x = panel_x + gauge_radius + padding
+            rpm_center_y = panel_y + (panel_h // 2)
+            self._render_radial_gauge(display, rpm_center_x, rpm_center_y, gauge_radius,
+                                     rpm, 6000, "RPM", "x1000",
+                                     major_tick_interval=1000, redline_threshold=5250)
+
+            # MIDDLE: Stats and Scores (compact vertical stack)
+            stats_x = panel_x + int(panel_w * 0.40)
+            stats_y = section_y
+
+            # Gear indicator (large)
+            gear_text = f"GEAR: {gear}"
+            gear_surf = self.panel_fonts["sub_value"].render(gear_text, True, (255, 255, 255))
+            display.blit(gear_surf, (stats_x, stats_y))
+            stats_y += gear_surf.get_height() + 10
+
+            # Overall Score
+            overall_score = self._info_text.get("main_score", "100")
+            score_label_surf = self.panel_fonts["small_label"].render("Overall Score", True, (200, 200, 200))
+            score_surf = self.panel_fonts["large_val"].render(overall_score, True, (255, 255, 255))
+            display.blit(score_label_surf, (stats_x, stats_y))
+            stats_y += score_label_surf.get_height() + 3
+            display.blit(score_surf, (stats_x, stats_y))
+            stats_y += score_surf.get_height() + 8
+
+            # Sub-scores (compact)
+            sub_labels = self._info_text.get("sub_label", {})
+            for label, value in sub_labels.items():
+                sub_text = f"{label}: {value}"
+                sub_surf = self.panel_fonts["small_label"].render(sub_text, True, (180, 180, 180))
+                display.blit(sub_surf, (stats_x, stats_y))
+                stats_y += sub_surf.get_height() + 2
+
+            # RIGHT: Speedometer (0-100 MPH)
+            speedo_center_x = panel_x + panel_w - gauge_radius - padding
+            speedo_center_y = panel_y + (panel_h // 2)
+            self._render_radial_gauge(display, speedo_center_x, speedo_center_y, gauge_radius,
+                                     speed_mph, 100, "SPEED", "MPH",
+                                     major_tick_interval=10, redline_threshold=None)
+
             self._draw_center_notifications(display)
+
+            # Calculate final offsets for warnings and predictive panel
+            h_offset = panel_x + padding
+            v_offset = panel_y + panel_h - padding  # Bottom of panel
 
             panel_rect = pygame.Rect(int(panel_x), int(panel_y), int(panel_w), int(panel_h))
             self.warning_manager.render(display, panel_rect, v_offset)
-        
+
         if self._predictive_indices:
             self._render_predictive_panel(display, h_offset, v_offset+math.floor(20*self.scale_factor))
 
