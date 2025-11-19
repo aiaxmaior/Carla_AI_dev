@@ -72,6 +72,7 @@
 !/sys_task.py
 !/tts_integration.py
 !/2q.py
+!/_QDrive_alpha.sh
 
 # Migration/setup scripts
 !/automated_migration_script.py
