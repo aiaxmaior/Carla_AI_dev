@@ -731,8 +731,8 @@ def main():
     argparser.add_argument(
         '--perception-mode',
         choices=['programmatic', 'metadata', 'minimal-viable', 'lidar-hybrid'],
-        default='lidar-hybrid',
-        help='Perception system mode (default: lidar-hybrid for best performance)'
+        default='programmatic',
+        help='Perception system mode (default: programmatic for compatibility, use --perception-mode lidar-hybrid for best performance)'
     )
 
     argparser.add_argument(
