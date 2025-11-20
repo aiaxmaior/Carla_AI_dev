@@ -456,9 +456,8 @@ def game_loop(args, client, monitors, joystick_mappings=None):
                     seatbelt_state = (
                         hardware_bridge._seatbelt_fastened if hardware_bridge else False
                     )
-                # [PERF_HOT][DEBUG_ONLY] CRITICAL: This logs EVERY FRAME! Should be throttled or debug-only
-                # TODO: Move to debug mode or throttle to once per second
-                logging.info(f"Seatbelt state: {'ON' if seatbelt_state else 'OFF'}")
+                # [PERF_HOT][DEBUG_ONLY] Changed to debug to eliminate frame-level spam
+                logging.debug(f"Seatbelt state: {'ON' if seatbelt_state else 'OFF'}")
                 controller._seatbelt_state = seatbelt_state
                 velocity = world_obj.player.get_velocity()
                 speed_kmh = 3.6 * velocity.length()

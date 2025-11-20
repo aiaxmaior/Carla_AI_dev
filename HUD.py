@@ -1889,7 +1889,7 @@ class CameraManager(object):
                     y_pos = padding
                     display.blit(final_surface, (x_pos, y_pos))
 #                    self.hud._render_blinker_indicator(display)
-                    logging.info(f'rearview x,y ({x_pos},{y_pos} rearview_res_xy ({self.rearview_res_w},{self.rearview_res_h})')
+                    logging.debug(f'rearview x,y ({x_pos},{y_pos} rearview_res_xy ({self.rearview_res_w},{self.rearview_res_h})')  # Changed to debug
 #        self.hud._render_blinker_indicator(display)
 
     def destroy(self):
