@@ -1,3 +1,24 @@
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: HUD rendering, camera management, vision overlay, bounding boxes
+# [X] | Hot-path functions: tick(), render(), bbox_blit(), _image_processor()
+# [X] |- Heavy allocs in hot path? YES - Many temp dicts, font renders, surfaces
+# [X] |- pandas/pyarrow/json/disk/net in hot path? pandas import but minimal use
+# [X] | Graphics here? YES - PRIMARY RENDERER (cameras, overlays, panels)
+# [X] | Data produced (tick schema?): Display state only (no logging)
+# [X] | Storage (Parquet/Arrow/CSV/none): None (pure rendering)
+# [X] | Queue/buffer used?: YES - image_queues for camera frames (threaded)
+# [X] | Session-aware? No - stateless renderer per frame
+# [X] | Debug-only heavy features?: vision_compare mode, recording, logging spam
+# Top 3 perf risks:
+# 1. [PERF_HOT] Vision overlay compute() called for EVERY camera tile EVERY frame (L858, L794)
+# 2. [PERF_HOT] pygame.transform.smoothscale() on large surfaces every frame (L852)
+# 3. [PERF_HOT] Font rendering every frame for dynamic text (no caching of static labels)
+# 4. [PERF_HOT] Logging spam: L1005, L1008 (CRITICAL logs every blinker frame)
+# 5. [PERF_SPLIT] CameraManager spawns 4+ cameras + threads - no resolution/FPS tuning flags
+# ============================================================================
+
 import carla
 import pygame
 import os
@@ -11,6 +32,9 @@ import queue
 import threading
 from Utility.Font.FontIconLibrary import IconLibrary, FontLibrary
 from Core.Vision.VisionPerception import Perception
+from Core.Vision.VisionPerception_MinimalViable import MinimalVisionPerception
+from Core.Vision.VisionPerception_MetadataRoute import MetadataPerception
+from Core.Vision.VisionPerception_LidarHybrid import LidarHybridPerception, ThreatZone
 from EventManager import EventManager
 from Helpers import EndScreen, PersistentWarningManager, BlinkingAlert, HelpText
 import pygame
@@ -147,6 +171,16 @@ class HUD(object):
         self.vision_compare = getattr(args, "vision_compare", False)
         self.perception = None
         self._vision_writer = None
+
+        # Store args for perception configuration
+        self.args = args
+        self.perception_mode = getattr(args, "perception_mode", "programmatic")
+
+        # Performance debugging
+        self._debug_perception_timing = True  # Set to False to disable
+        self._last_perf_report = 0
+        self._perf_samples = []
+
         rec_path = getattr(args, "record_vision_demo", None)
         if rec_path:
             try:
@@ -181,6 +215,149 @@ class HUD(object):
             'predictive': {}
         }
         self._scores_df = None
+        
+        # Object distance thresholds for notifications
+
+    def _initialize_perception(self, world_obj, camera_actor=None):
+        """
+        Initialize the appropriate perception system based on args.perception_mode
+
+        Args:
+            world_obj: World instance with .world and .player
+            camera_actor: Camera actor for programmatic mode (optional for others)
+
+        Returns:
+            Initialized perception instance
+        """
+        mode = self.perception_mode
+        args = self.args
+
+        logging.info(f"[Perception] Initializing mode: {mode}")
+
+        if mode == "programmatic":
+            # Original VisionPerception (legacy)
+            perception = Perception(world_obj, camera_actor=camera_actor)
+            logging.info(f"[Perception] Programmatic mode initialized (legacy)")
+
+        elif mode == "minimal-viable":
+            # MinimalViable: Update/Query separation with persistent tracking
+            perception = MinimalVisionPerception(
+                world_obj,
+                max_distance=getattr(args, "safe_distance", 100.0)
+            )
+            logging.info(f"[Perception] MinimalViable mode initialized (max_distance={args.safe_distance}m)")
+
+        elif mode == "metadata":
+            # Metadata Route: Lightest approach, metadata only
+            perception = MetadataPerception(
+                world_obj,
+                max_distance=getattr(args, "safe_distance", 100.0)
+            )
+            logging.info(f"[Perception] Metadata mode initialized (max_distance={args.safe_distance}m)")
+
+        elif mode == "lidar-hybrid":
+            # LIDAR Hybrid: GPU-accelerated sensor-based detection (recommended)
+            perception = LidarHybridPerception(
+                world_obj,
+                danger_distance=getattr(args, "danger_distance", 15.0),
+                caution_distance=getattr(args, "caution_distance", 30.0),
+                safe_distance=getattr(args, "safe_distance", 100.0),
+                show_danger_bbox=getattr(args, "show_danger_bbox", True),
+                show_caution_bbox=getattr(args, "show_caution_bbox", False),
+                enable_ground_truth_matching=not getattr(args, "no_ground_truth_matching", False)
+            )
+
+            # Store LIDAR parameters for lazy attachment (will attach on first update)
+            perception._pending_lidar_config = {
+                'lidar_range': getattr(args, "lidar_range", args.safe_distance),
+                'points_per_second': getattr(args, "lidar_points_per_second", 56000),
+                'rotation_frequency': getattr(args, "lidar_rotation_frequency", 10.0)
+            }
+
+            logging.info(f"[Perception] LIDAR Hybrid initialized - "
+                        f"danger={args.danger_distance}m, caution={args.caution_distance}m, "
+                        f"safe={args.safe_distance}m, lidar_range={getattr(args, 'lidar_range', args.safe_distance)}m, "
+                        f"show_danger_bbox={args.show_danger_bbox}, show_caution_bbox={args.show_caution_bbox}")
+
+        else:
+            # Fallback to programmatic
+            logging.warning(f"[Perception] Unknown mode '{mode}', falling back to programmatic")
+            perception = Perception(world_obj, camera_actor=camera_actor)
+
+        return perception
+
+    def _get_perception_objects(self, max_objects=24, include_2d=True, camera_transform=None, camera_intrinsics=None):
+        """
+        Unified interface to get objects from any perception mode
+
+        Args:
+            max_objects: Maximum number of objects to return
+            include_2d: Whether to include 2D bounding boxes (expensive for some modes)
+            camera_transform: Camera transform for bbox projection
+            camera_intrinsics: Camera intrinsics (width, height, fov_deg)
+
+        Returns:
+            List of object dicts with {track_id, cls, distance_m, rel_speed_mps, bbox_xyxy}
+        """
+        if not self.perception:
+            return []
+
+        mode = self.perception_mode
+
+        try:
+            if mode == "programmatic":
+                # Original VisionPerception API
+                return self.perception.compute(max_objects=max_objects, include_2d=include_2d)
+
+            elif mode == "minimal-viable":
+                # MinimalViable API
+                return self.perception.get_objects_as_dict(
+                    max_objects=max_objects,
+                    include_2d=include_2d,
+                    camera_transform=camera_transform,
+                    camera_intrinsics=camera_intrinsics
+                )
+
+            elif mode == "metadata":
+                # Metadata Route API
+                objects = self.perception.get_objects(max_objects=max_objects)
+
+                # Optionally add bboxes on-demand (expensive!)
+                if include_2d and camera_transform and camera_intrinsics:
+                    for obj in objects[:10]:  # Only bbox for closest 10
+                        bbox = self.perception.get_bbox_for_object(
+                            obj['track_id'],
+                            camera_transform,
+                            width=camera_intrinsics.get('width', 1920),
+                            height=camera_intrinsics.get('height', 1080),
+                            fov_deg=camera_intrinsics.get('fov_deg', 90.0)
+                        )
+                        obj['bbox_xyxy'] = bbox
+                else:
+                    # No bbox
+                    for obj in objects:
+                        obj['bbox_xyxy'] = None
+
+                return objects
+
+            elif mode == "lidar-hybrid":
+                # LIDAR Hybrid API
+                return self.perception.get_clusters_as_dict(
+                    zones=[ThreatZone.DANGER, ThreatZone.CAUTION],  # Only danger/caution zones
+                    include_bbox=include_2d,
+                    camera_transform=camera_transform,
+                    camera_intrinsics=camera_intrinsics
+                )
+
+            else:
+                logging.warning(f"[Perception] Unknown mode '{mode}'")
+                return []
+
+        except Exception as e:
+            logging.error(f"[Perception] Error getting objects: {e}")
+            return []
+
+
         
     
     def _thresholds_for(self, cls: str):
@@ -804,6 +981,7 @@ class HUD(object):
         return y
     
 
+    # [PERF_HOT] Called every frame from Main game loop
     def tick(self, world_instance, clock, idling , controller, display_fps):
         """
         Processes actions, states for each frame or "tick" of the simulation.  For the HUD
@@ -814,14 +992,56 @@ class HUD(object):
 
         try:
             cm = self.world.camera_manager
-            cam_actor = cm.sensors.get('left_dash_cam')  # second tile (“main”)
+            cam_actor = cm.sensors.get('left_dash_cam')  # second tile ("main")
             if cam_actor:
                 if not hasattr(self, 'perception') or self.perception is None:
-                    self.perception = Perception(self.world, camera_actor=cam_actor)
-                    logging.info(f"[Vision] bound to left_dash FOV={self.perception.fov_deg:.1f} "
-                                f"size={self.perception.image_width}x{self.perception.image_height}")
+                    # Use factory method to initialize correct perception mode
+                    self.perception = self._initialize_perception(self.world, camera_actor=cam_actor)
+
+                    # Log perception info (mode-dependent)
+                    if hasattr(self.perception, 'fov_deg'):
+                        # Programmatic mode has camera info
+                        logging.info(f"[Vision] bound to left_dash FOV={self.perception.fov_deg:.1f} "
+                                    f"size={self.perception.image_width}x{self.perception.image_height}")
                 else:
-                    self.perception.set_camera(cam_actor)
+                    # Update camera if perception already exists (programmatic mode only)
+                    if hasattr(self.perception, 'set_camera'):
+                        self.perception.set_camera(cam_actor)
+
+            # Update perception state once per tick (for new perception modes)
+            if self.perception and hasattr(self.perception, 'update'):
+                # Performance timing
+                if self._debug_perception_timing:
+                    t0 = time.time()
+
+                self.perception.update()
+
+                if self._debug_perception_timing:
+                    update_time_ms = (time.time() - t0) * 1000
+                    self._perf_samples.append(update_time_ms)
+
+                    # Report every 2 seconds
+                    if time.time() - self._last_perf_report > 2.0:
+                        if self._perf_samples:
+                            avg_ms = sum(self._perf_samples) / len(self._perf_samples)
+                            min_ms = min(self._perf_samples)
+                            max_ms = max(self._perf_samples)
+
+                            status_msg = f"[PERF] Mode: {self.perception_mode} | "
+                            if self.perception:
+                                status_msg += f"Type: {type(self.perception).__name__} | "
+                                if hasattr(self.perception, 'lidar_sensor'):
+                                    sensor_status = "✓" if self.perception.lidar_sensor else "✗"
+                                    status_msg += f"LIDAR: {sensor_status} | "
+                                if hasattr(self.perception, 'clusters'):
+                                    status_msg += f"Clusters: {len(self.perception.clusters)} | "
+
+                            status_msg += f"Update: {avg_ms:.1f}ms avg ({min_ms:.1f}-{max_ms:.1f}ms)"
+                            print(status_msg)
+
+                            self._perf_samples = []
+                            self._last_perf_report = time.time()
+
         except Exception as e:
             logging.debug(f"[Vision] bind skipped: {e}")
         self.control = controller
@@ -903,6 +1123,8 @@ class HUD(object):
                 "coll_score": self._scores_frame_dict['scores'].get('PSS_ProactiveSafety', 0),
                 "lane_score": f"{self._scores_frame_dict['scores'].get('LDS_LaneDiscipline', 0)}",
                 "harsh_score": f"{self._scores_frame_dict['scores'].get('DSS_DrivingSmoothness', 0)}",
+                "Server FPS": f"{self.server_fps:.0f}",
+                "Render FPS": f"{display_fps:.0f}",
 #                "gear":gear,
 #                "debug_info":self._debug_values,
             }
@@ -911,6 +1133,7 @@ class HUD(object):
         for name, parameter in vars(ackermann_settings).items():
             self._info_text[name] = parameter
 
+    # [PERF_HOT] Main rendering function - called every frame
     def render(self, display):
         """
         Renders cameras and the HUD.
@@ -937,8 +1160,25 @@ class HUD(object):
                 if getattr(self, 'perception', None):
                     cam_actor = cm.get_camera_actor_for_queue('main') or cm.sensors.get('left_dash_cam')
                     if cam_actor:
-                        self.perception.set_camera(cam_actor)
-                    objs = self.perception.compute(max_objects=24, include_2d=True)
+                        # Update camera for programmatic mode
+                        if hasattr(self.perception, 'set_camera'):
+                            self.perception.set_camera(cam_actor)
+
+                    # Get camera info for projection
+                    camera_transform = cam_actor.get_transform() if cam_actor else None
+                    camera_intrinsics = {
+                        'width': W,
+                        'height': H,
+                        'fov_deg': getattr(self, '_fov', 90.0)
+                    }
+
+                    # Use unified interface (supports all perception modes)
+                    objs = self._get_perception_objects(
+                        max_objects=24,
+                        include_2d=True,
+                        camera_transform=camera_transform,
+                        camera_intrinsics=camera_intrinsics
+                    )
 
                     if objs:
                         font = self.panel_fonts.get('small_label', pygame.font.Font(None, 16))
@@ -996,13 +1236,31 @@ class HUD(object):
                     surf.fill((10, 10, 10))
                 else:
                     native = pygame.surfarray.make_surface(arr.swapaxes(0, 1)).convert()
+                    # [PERF_HOT] smoothscale is expensive on large surfaces - consider pre-scaling cameras
                     surf = pygame.transform.smoothscale(native, (W, H)) if native.get_size() != (W, H) else native
 
                 # ---- Vision overlay ON THIS TILE ----
                 if getattr(self, 'perception', None):
-                    # use this tile’s camera for pose/FOV so boxes align
-                    self.perception.set_camera(cam_actor)
-                    objs = self.perception.compute(max_objects=24, include_2d=True)
+                    # use this tile's camera for pose/FOV so boxes align
+                    if hasattr(self.perception, 'set_camera'):
+                        self.perception.set_camera(cam_actor)
+
+                    # Get camera info for projection
+                    camera_transform = cam_actor.get_transform() if cam_actor else None
+                    camera_intrinsics = {
+                        'width': surf.get_width(),
+                        'height': surf.get_height(),
+                        'fov_deg': getattr(self, '_fov', 90.0)
+                    }
+
+                    # [PERF_HOT] CRITICAL: This runs for ALL 4 camera tiles EVERY FRAME!
+                    # With LIDAR Hybrid, this is now much faster (1-2ms vs 40-60ms)
+                    objs = self._get_perception_objects(
+                        max_objects=24,
+                        include_2d=True,
+                        camera_transform=camera_transform,
+                        camera_intrinsics=camera_intrinsics
+                    )
 
                     if objs:
                         font = self.panel_fonts.get('small_label', pygame.font.Font(None, 16))
@@ -1198,9 +1456,11 @@ class HUD(object):
         if self._blinker_state == 1 and self._blinker_left_img:
             display.blit(self._blinker_left_img,
                         self._blinker_left_img.get_rect(center=(left_x, y)))
+            # [PERF_HOT][DEBUG_ONLY] CRITICAL: Logs EVERY frame blinker is on! Remove or gate with --debug
             logging.critical(f"blinker triggered left ⬅️ location: X={left_x},y= {y}")
 
         elif self._blinker_state == 2 and self._blinker_right_img:
+            # [PERF_HOT][DEBUG_ONLY] CRITICAL: Logs EVERY frame blinker is on! Remove or gate with --debug
             logging.critical(f"blinker triggered right ▶️ location: X={right_x},y= {y}")
             display.blit(self._blinker_right_img,
                         self._blinker_right_img.get_rect(center=(right_x, y)))
@@ -1629,7 +1889,7 @@ class CameraManager(object):
                     y_pos = padding
                     display.blit(final_surface, (x_pos, y_pos))
 #                    self.hud._render_blinker_indicator(display)
-                    logging.info(f'rearview x,y ({x_pos},{y_pos} rearview_res_xy ({self.rearview_res_w},{self.rearview_res_h})')
+                    logging.debug(f'rearview x,y ({x_pos},{y_pos} rearview_res_xy ({self.rearview_res_w},{self.rearview_res_h})')  # Changed to debug
 #        self.hud._render_blinker_indicator(display)
 
     def destroy(self):

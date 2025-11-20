@@ -1,6 +1,25 @@
 # Tools/evdev_autotest.py
 # Script: map the evdev event codes for the Arduino Board and the Moza Stalks to a json file.
 
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Test/utility script for evdev device mapping (NOT in hot path)
+# [ ] | Hot-path functions: None (standalone configuration tool)
+# [ ] |- Heavy allocs in hot path? N/A
+# [X] |- pandas/pyarrow/json/disk/net in hot path? File I/O for JSON config
+# [ ] | Graphics here? No
+# [ ] | Data produced (tick schema?): None (JSON config file)
+# [X] | Storage (Parquet/Arrow/CSV/none): JSON
+# [ ] | Queue/buffer used?: No
+# [ ] | Session-aware? No
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_OK] Test/utility script - NOT in hot path
+# 2. [PERF_OK] File I/O acceptable for configuration tool
+# 3. [PERF_OK] No performance concerns
+# ============================================================================
+
 import json
 import time
 import os

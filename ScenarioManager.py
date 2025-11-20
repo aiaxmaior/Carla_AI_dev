@@ -2,6 +2,25 @@
 # Lightweight, interactive scenarios for CARLA 0.9.16 (UE4).
 # Player stays in control; scenarios spawn/drive context and evaluate via PredictiveIndices.
 
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Scenario orchestration (spawns actors, manages test scenarios)
+# [X] | Hot-path functions: tick() if scenario active (20 Hz)
+# [X] |- Heavy allocs in hot path? Moderate - CSV writes, predictor updates
+# [X] |- pandas/pyarrow/json/disk/net in hot path? CSV writes (file I/O)
+# [ ] | Graphics here? No
+# [X] | Data produced (tick schema?): Scenario state + predictor results
+# [X] | Storage (Parquet/Arrow/CSV/none): CSV export per scenario
+# [ ] | Queue/buffer used?: No - direct writes
+# [X] | Session-aware? Per-scenario tracking
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_HOT] CSV write every tick (file I/O in hot path!)
+# 2. [PERF_SPLIT] Should buffer writes or use async I/O
+# 3. [PERF_OK] Only active during scenario runs (not normal driving)
+# ============================================================================
+
 import math, random, csv, time
 from dataclasses import dataclass
 from typing import Optional, Dict

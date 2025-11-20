@@ -2,7 +2,7 @@
   "evdev": {
     "moza": {
       "name": "Boxflat Multifunction Stalks",
-      "event": "/dev/input/event20",
+      "event": "/dev/input/event17",
       "button_map": {
         "left_on": 297,
         "left_off": 296,
@@ -17,7 +17,7 @@
     },
     "arduino": {
       "name": "Arduino LLC Arduino Leonardo",
-      "event": "/dev/input/event19",
+      "event": "/dev/input/event9",
       "contact_code": 288,
       "invert": false
     }

@@ -1,3 +1,22 @@
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Package __init__ (imports only, NOT in hot path)
+# [ ] | Hot-path functions: None (import-time only)
+# [ ] |- Heavy allocs in hot path? N/A - import-time only
+# [ ] |- pandas/pyarrow/json/disk/net in hot path? No
+# [ ] | Graphics here? No
+# [ ] | Data produced (tick schema?): None
+# [ ] | Storage (Parquet/Arrow/CSV/none): None
+# [ ] | Queue/buffer used?: No
+# [ ] | Session-aware? No
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_OK] __init__.py - package imports only (import-time)
+# 2. [PERF_OK] try/except blocks prevent import failures
+# 3. [PERF_OK] No performance concerns
+# ============================================================================
+
 """
 Q-DRIVE Cortex Vision Package
 ============================
@@ -46,6 +65,7 @@ try:
     from .DMS_Module import AlertLevel, EyeMetrics, DriverState, DMS
     _dms_tracking_available = True
 except ImportError:
+    _dms_tracking_available = False
     DMS_Module = None
     pass
 
@@ -70,6 +90,7 @@ try:
     from .HazardAnalysis import HazardDetector, RiskAssessment
     _hazard_analysis_available = True
 except ImportError:
+    _hazard_analysis_available = False
     pass
 
 __all__ = []

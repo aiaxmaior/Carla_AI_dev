@@ -647,9 +647,21 @@ class World(object):
             blueprint = self.world.get_blueprint_library().find("vehicle.mercedes.sprinter")
         blueprint.set_attribute("role_name", "hero")
 
+        # Set color attribute with error handling (some blueprints have invalid recommended colors)
         if blueprint.has_attribute("color"):
-            color = random.choice(blueprint.get_attribute("color").recommended_values)
-            blueprint.set_attribute("color", color)
+            try:
+                color_values = blueprint.get_attribute("color").recommended_values
+                # Filter out invalid color values (CARLA bug: some blueprints have non-color strings like "autopilot")
+                valid_colors = [c for c in color_values if ',' in str(c) and len(str(c).split(',')) == 3]
+                if valid_colors:
+                    color = random.choice(valid_colors)
+                    blueprint.set_attribute("color", color)
+                    logging.debug(f"Set vehicle color to: {color}")
+                else:
+                    # No valid RGB colors, skip color setting
+                    logging.warning(f"No valid RGB colors found for blueprint {blueprint.id}. Skipping color attribute.")
+            except (ValueError, IndexError, RuntimeError) as e:
+                logging.warning(f"Failed to set vehicle color: {e}. Using default color.")
 
         if self.player is not None:
             self.destroy_player_and_sensors()

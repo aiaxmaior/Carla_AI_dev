@@ -1,4 +1,22 @@
-    # MozaVirtualGamepad.oy
+    # MozaVirtualGamepad.py
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Hardware bridge for MOZA stalk inputs (blinkers, hazard)
+# [ ] | Hot-path functions: None (runs in separate thread)
+# [ ] |- Heavy allocs in hot path? Minimal - event processing only
+# [ ] |- pandas/pyarrow/json/disk/net in hot path? No
+# [ ] | Graphics here? No
+# [ ] | Data produced (tick schema?): None (translates hardware events)
+# [ ] | Storage (Parquet/Arrow/CSV/none): None
+# [ ] | Queue/buffer used?: No (direct event translation)
+# [ ] | Session-aware? No
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_OK] Runs in SEPARATE THREAD - isolated from main loop
+# 2. [PERF_OK] Threaded I/O with evdev - non-blocking
+# 3. [PERF_OK] time.sleep(0.1) for button press/release - acceptable
+# ============================================================================
 
 import threading
 import time

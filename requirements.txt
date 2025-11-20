@@ -3,6 +3,7 @@ math
 logging
 argparse
 pandas
+pyarrow >= 14.0.0  # ML-ready data logging with Arrow/Parquet
 matplotlib
 pygame
 pygame_widgets

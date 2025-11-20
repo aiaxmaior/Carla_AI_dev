@@ -1,3 +1,22 @@
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Sensor management (collision, lane invasion, GNSS, lane state)
+# [X] | Hot-path functions: tick() for lane invasion, callbacks for collision
+# [X] |- Heavy allocs in hot path? Minimal - enum states + dict returns
+# [ ] |- pandas/pyarrow/json/disk/net in hot path? No
+# [ ] | Graphics here? No
+# [X] | Data produced (tick schema?): Sensor event dicts + state enums
+# [ ] | Storage (Parquet/Arrow/CSV/none): None (consumed by Main/MVD)
+# [ ] | Queue/buffer used?: No
+# [X] | Session-aware? No - per-tick event tracking only
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_OK] Callback-driven - only fires on events (efficient)
+# 2. [PERF_OK] tick() lightweight - just state tracking
+# 3. [PERF_OK] No heavy CARLA queries in hot path
+# ============================================================================
+
 import carla
 import weakref
 import logging

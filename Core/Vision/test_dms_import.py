@@ -2,6 +2,24 @@
 """
 Test script to verify DMS_Module imports correctly without errors
 """
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Test script for DMS imports (NOT in hot path)
+# [ ] | Hot-path functions: None (test/verification only)
+# [ ] |- Heavy allocs in hot path? N/A - not in hot path
+# [ ] |- pandas/pyarrow/json/disk/net in hot path? No
+# [ ] | Graphics here? No
+# [ ] | Data produced (tick schema?): None (console output only)
+# [ ] | Storage (Parquet/Arrow/CSV/none): None
+# [ ] | Queue/buffer used?: No
+# [ ] | Session-aware? No
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_OK] NOT in hot path - test/verification script only
+# 2. [PERF_OK] Import testing acceptable
+# 3. [PERF_OK] No performance concerns
+# ============================================================================
 
 import os
 import sys

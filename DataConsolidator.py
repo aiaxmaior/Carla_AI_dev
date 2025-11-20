@@ -4,6 +4,26 @@ Centralized data collection and formatting for predictor indices.
 Consolidates telemetry from all simulator modules into a unified stream.
 """
 
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Data collection hub (consolidates telemetry from all modules)
+# [X] | Hot-path functions: collect_frame_data() if called every tick
+# [X] |- Heavy allocs in hot path? YES - large dict creation + deque append
+# [X] |- pandas/pyarrow/json/disk/net in hot path? pandas used for analysis only
+# [ ] | Graphics here? No
+# [X] | Data produced (tick schema?): Frame dict per tick
+# [X] | Storage (Parquet/Arrow/CSV/none): In-memory deque (1000 frames max)
+# [X] | Queue/buffer used?: YES - deque (efficient) + optional queue.Queue for streaming
+# [X] | Session-aware? Should add session_id
+# [X] | Debug-only heavy features?: Statistics tracking (could be gated)
+# Top 3 perf risks:
+# 1. [PERF_HOT] collect_frame_data() creates comprehensive dict every tick if called
+# 2. [PERF_OK] deque with maxlen is efficient (O(1) append/popleft)
+# 3. [PERF_SPLIT] Thread safety lock on every access - may cause contention
+# 4. [PERF_SPLIT] Multiple data collection modules - consolidate with DataIngestion?
+# ============================================================================
+
 import time
 import json
 import logging

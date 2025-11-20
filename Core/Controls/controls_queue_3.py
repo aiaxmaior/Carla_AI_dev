@@ -1,3 +1,24 @@
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: DualControl input handler (alternative version?)
+# [X] | Hot-path functions: parse_events(), process_commands() - EVERY FRAME
+# [X] |- Heavy allocs in hot path? Moderate - command queue, dict creation per frame
+# [ ] |- pandas/pyarrow/json/disk/net in hot path? No
+# [ ] | Graphics here? No
+# [X] | Data produced (tick schema?): Control state dict, datalog dict
+# [ ] | Storage (Parquet/Arrow/CSV/none): None (consumed by DataIngestion)
+# [X] | Queue/buffer used?: YES - command queue (deque)
+# [ ] | Session-aware? No
+# [X] | Debug-only heavy features?: logging.info() on L712, L863 every frame
+# Top 3 perf risks:
+# 1. [PERF_HOT] parse_events() + process_commands() run EVERY FRAME
+# 2. [DEBUG_ONLY] L712: logging.info("seatbelt state") EVERY FRAME - should be throttled
+# 3. [PERF_OK] Command queue pattern good - decouples parsing from execution
+# 4. [PERF_OK] Steering model integration (L844-860) - acceptable overhead
+# NOTE: This file has ASCII art (whale) - may be alternate/development version
+# ============================================================================
+
 import collections
 import logging
 import math

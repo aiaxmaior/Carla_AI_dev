@@ -706,7 +706,7 @@ class DualControl(object):
         """
         if not player_carla_actor or not player_carla_actor.is_alive:
             return
-        logging.info(f"seatbelt state: {self._seatbelt_state}")
+        logging.debug(f"seatbelt state: {self._seatbelt_state}")  # Changed to debug to reduce spam
         raw_axis_values = {"steer": 0.0, "throttle": 0.0, "brake": 0.0}
         self._idling_nobrake = False
         joystick_driving_active = (

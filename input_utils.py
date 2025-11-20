@@ -1,4 +1,23 @@
 #! Helper Utilities
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Helper utilities for joystick event ID resolution
+# [ ] | Hot-path functions: ui_button_pressed() called during event processing
+# [ ] |- Heavy allocs in hot path? Minimal - dict/tuple lookups only
+# [ ] |- pandas/pyarrow/json/disk/net in hot path? No
+# [ ] | Graphics here? No
+# [ ] | Data produced (tick schema?): None
+# [ ] | Storage (Parquet/Arrow/CSV/none): None
+# [ ] | Queue/buffer used?: No
+# [ ] | Session-aware? No
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_OK] Helper functions - lightweight event matching
+# 2. [PERF_OK] Called during UI events only (not every frame)
+# 3. [PERF_OK] No heavy operations
+# ============================================================================
+
 import pygame
 
 def _resolve_event_ids(event):

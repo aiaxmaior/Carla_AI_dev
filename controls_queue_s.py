@@ -1,3 +1,23 @@
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: DualControl input handler (LEGACY/DUPLICATE? - see Core/Controls/controls_queue.py)
+# [X] | Hot-path functions: parse_events(), process_commands() - EVERY FRAME
+# [X] |- Heavy allocs in hot path? Moderate - command queue, dict creation per frame
+# [ ] |- pandas/pyarrow/json/disk/net in hot path? No
+# [ ] | Graphics here? No
+# [X] | Data produced (tick schema?): Control state dict, datalog dict
+# [ ] | Storage (Parquet/Arrow/CSV/none): None (consumed by DataIngestion)
+# [X] | Queue/buffer used?: YES - command queue (deque)
+# [ ] | Session-aware? No
+# [ ] | Debug-only heavy features?: logging.info() on L750 every frame
+# Top 3 perf risks:
+# 1. [PERF_HOT] parse_events() + process_commands() run EVERY FRAME
+# 2. [PERF_SPLIT] NOTE: This appears to be DUPLICATE/LEGACY version
+# 3. [PERF_OK] Command queue pattern good - decouples parsing from execution
+# NOTE: Check if this file is still used - may be superseded by Core/Controls/controls_queue.py
+# ============================================================================
+
 import collections
 import logging
 import math
