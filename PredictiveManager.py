@@ -58,8 +58,8 @@ class PredictiveManager:
 
             # Map the DataFrame columns to the 'obs' dictionary expected by PredictiveIndices
             obs_for_predictor = {
-                "v": latest_data.get('speed_kmh', 0) / 3.6,  # Convert km/h to m/s
-                "ax": latest_data.get('acceleration_x', 0),
+                "velocity": latest_data.get('speed_kmh', 0) / 3.6,  # Convert km/h to m/s (fixed key name)
+                "acceleration_x": latest_data.get('acceleration_x', 0),
                 "yaw_rate": latest_data.get('angular_velocity_z', 0),
                 "lateral_offset": latest_data.get('distance_from_lane_center', 0),
                 "lane_width": latest_data.get('lane_width', 3.6),
