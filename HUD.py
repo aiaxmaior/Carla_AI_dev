@@ -186,6 +186,31 @@ class HUD(object):
                 self._vision_writer = None
         
         # Object distance thresholds for notifications
+        self.distance_alerts = {"warning": 20.0,"critical":7.5 }
+        # Increase sensitivity for pedestrians
+        self.pedestrian_multiplier = 1.40
+        # time-to-collision
+        self.ttc_alert_s = 2.0
+        # min approach speed
+        self.approach_min_mps = 0.5
+
+        #per-object alert gating
+        self._prox_state = {}
+        self._prox_realert_s = 2.0
+        self._prox_hysteresis_m = 1.0
+        self._scores_frame_dict = {
+            'scores': {
+                'overall_mvd_score': 0.0,
+                'lane_violation_score': 0.0,
+                'unsafe_lane_change_score': 0.0,
+                'collision_score': 0.0,
+                'speed_score': 0.0
+            },
+            'predictive': {}
+        }
+        self._scores_df = None
+        
+        # Object distance thresholds for notifications
 
     def _initialize_perception(self, world_obj, camera_actor=None):
         """
@@ -326,30 +351,7 @@ class HUD(object):
             logging.error(f"[Perception] Error getting objects: {e}")
             return []
 
-        # Object distance thresholds for notifications
-        self.distance_alerts = {"warning": 20.0,"critical":7.5 }
-        # Increase sensitivity for pedestrians
-        self.pedestrian_multiplier = 1.40
-        # time-to-collision
-        self.ttc_alert_s = 2.0
-        # min approach speed
-        self.approach_min_mps = 0.5
 
-        #per-object alert gating
-        self._prox_state = {}
-        self._prox_realert_s = 2.0
-        self._prox_hysteresis_m = 1.0
-        self._scores_frame_dict = {
-            'scores': {
-                'overall_mvd_score': 0.0,
-                'lane_violation_score': 0.0,
-                'unsafe_lane_change_score': 0.0,
-                'collision_score': 0.0,
-                'speed_score': 0.0
-            },
-            'predictive': {}
-        }
-        self._scores_df = None
         
     
     def _thresholds_for(self, cls: str):
