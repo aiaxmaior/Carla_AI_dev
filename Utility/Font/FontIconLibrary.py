@@ -50,9 +50,28 @@ class IconLibrary:
       "nav": {...},
       "items": {...}
     }
+
+    Singleton pattern: Only one instance is created, subsequent calls return the same instance.
     """
 
+    _instance = None  # Singleton instance
+    _initialized = False  # Track if __init__ has run
+
+    def __new__(cls):
+        """Singleton pattern: return existing instance if it exists"""
+        if cls._instance is None:
+            cls._instance = super(IconLibrary, cls).__new__(cls)
+        return cls._instance
+
     def __init__(self):
+        # Only initialize once (singleton pattern)
+        if IconLibrary._initialized:
+            logging.debug("[IconLibrary] returning existing singleton instance")
+            return  # Already initialized, skip
+
+        logging.info("[IconLibrary] initializing singleton (first time)...")
+        IconLibrary._initialized = True
+
         self._data: Dict[str, Dict[str, str]] = {}
         self._global_default: str = "•"
         self._load()
@@ -88,6 +107,8 @@ class IconLibrary:
             },
             "items": {"gamepad": "gpad", "joystick": "js"},
         }
+
+        logging.info("[IconLibrary] initialized (singleton created)")
 
     def _load(self) -> None:
         for p in (Path("./custom_assets/icons/icons.json"), Path("./icons.json")):
@@ -189,9 +210,27 @@ class FontLibrary:
 
     - If multiple faces exist (regular/bold/italic/bold_italic), it chooses the best face.
     - Otherwise it falls back to set_bold/set_italic on the loaded face.
+
+    Singleton pattern: Only one instance is created, subsequent calls return the same instance.
     """
 
+    _instance = None  # Singleton instance
+    _initialized = False  # Track if __init__ has run
+
+    def __new__(cls):
+        """Singleton pattern: return existing instance if it exists"""
+        if cls._instance is None:
+            cls._instance = super(FontLibrary, cls).__new__(cls)
+        return cls._instance
+
     def __init__(self):
+        # Only initialize once (singleton pattern)
+        if FontLibrary._initialized:
+            logging.debug("[FontLibrary] returning existing singleton instance")
+            return  # Already initialized, skip
+
+        logging.info("[FontLibrary] initializing singleton (first time)...")
+        FontLibrary._initialized = True
         # stems -> absolute path
         self._stems: Dict[str, str] = {}
         # families -> { "regular": path, "bold": path, "italic": path, "bold_italic": path }
@@ -256,9 +295,9 @@ class FontLibrary:
                 "sub_label": 24,
                 "sub_value": 32
             }
-        }       
+        }
 
-        logging.info("[FontLibrary] initialized")
+        logging.info("[FontLibrary] initialized (singleton created)")
 
     # ---------- internals ----------
 
