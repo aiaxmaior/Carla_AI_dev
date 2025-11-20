@@ -175,6 +175,12 @@ class HUD(object):
         # Store args for perception configuration
         self.args = args
         self.perception_mode = getattr(args, "perception_mode", "programmatic")
+
+        # Performance debugging
+        self._debug_perception_timing = True  # Set to False to disable
+        self._last_perf_report = 0
+        self._perf_samples = []
+
         rec_path = getattr(args, "record_vision_demo", None)
         if rec_path:
             try:
@@ -1004,7 +1010,37 @@ class HUD(object):
 
             # Update perception state once per tick (for new perception modes)
             if self.perception and hasattr(self.perception, 'update'):
+                # Performance timing
+                if self._debug_perception_timing:
+                    t0 = time.time()
+
                 self.perception.update()
+
+                if self._debug_perception_timing:
+                    update_time_ms = (time.time() - t0) * 1000
+                    self._perf_samples.append(update_time_ms)
+
+                    # Report every 2 seconds
+                    if time.time() - self._last_perf_report > 2.0:
+                        if self._perf_samples:
+                            avg_ms = sum(self._perf_samples) / len(self._perf_samples)
+                            min_ms = min(self._perf_samples)
+                            max_ms = max(self._perf_samples)
+
+                            status_msg = f"[PERF] Mode: {self.perception_mode} | "
+                            if self.perception:
+                                status_msg += f"Type: {type(self.perception).__name__} | "
+                                if hasattr(self.perception, 'lidar_sensor'):
+                                    sensor_status = "✓" if self.perception.lidar_sensor else "✗"
+                                    status_msg += f"LIDAR: {sensor_status} | "
+                                if hasattr(self.perception, 'clusters'):
+                                    status_msg += f"Clusters: {len(self.perception.clusters)} | "
+
+                            status_msg += f"Update: {avg_ms:.1f}ms avg ({min_ms:.1f}-{max_ms:.1f}ms)"
+                            print(status_msg)
+
+                            self._perf_samples = []
+                            self._last_perf_report = time.time()
 
         except Exception as e:
             logging.debug(f"[Vision] bind skipped: {e}")
