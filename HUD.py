@@ -1087,6 +1087,8 @@ class HUD(object):
                 "coll_score": self._scores_frame_dict['scores'].get('PSS_ProactiveSafety', 0),
                 "lane_score": f"{self._scores_frame_dict['scores'].get('LDS_LaneDiscipline', 0)}",
                 "harsh_score": f"{self._scores_frame_dict['scores'].get('DSS_DrivingSmoothness', 0)}",
+                "Server FPS": f"{self.server_fps:.0f}",
+                "Render FPS": f"{display_fps:.0f}",
 #                "gear":gear,
 #                "debug_info":self._debug_values,
             }
