@@ -1024,16 +1024,44 @@ class MLDataLogger:
 
         logging.info(f"MLDataLogger initialized (session={self.session_id}, csv={export_csv}, parquet={export_parquet})")
 
-    def log_frame(self, frame_data: Dict[str, Any]):
+    def log_frame(self, world_obj_or_data, metrics=None):
         """
         Log a single frame (backward compatible with DataIngestion.log_frame)
 
         Args:
-            frame_data: Dictionary with frame telemetry
+            world_obj_or_data: Either world object (old signature) or frame_data dict (new signature)
+            metrics: Metrics dictionary (old signature only)
         """
+        # Backward compatibility: Support both signatures
+        # Old: log_frame(world_obj, metrics)
+        # New: log_frame(frame_data)
+
+        if metrics is not None:
+            # Old signature: log_frame(world_obj, metrics)
+            # Import the old DataIngestion flatten logic
+            from DataIngestion import DataIngestion as OldDataIngestion
+            temp_ingestor = OldDataIngestion()
+            temp_ingestor.log_frame(world_obj_or_data, metrics)
+
+            # Get the flattened frame data
+            if temp_ingestor._log_frame:
+                frame_data = temp_ingestor._log_frame.copy()
+            else:
+                logging.warning("Failed to flatten frame data, using metrics only")
+                frame_data = metrics.copy()
+        else:
+            # New signature: log_frame(frame_data)
+            frame_data = world_obj_or_data
+
         # Add frame number if not present
         if 'frame' not in frame_data:
             frame_data['frame'] = self.frame_count
+
+        # Merge pending predictive indices (backward compatibility)
+        if hasattr(self, '_pending_predictive_indices') and self._pending_predictive_indices:
+            frame_data.update(self._pending_predictive_indices)
+            # Clear after merging
+            self._pending_predictive_indices = {}
 
         # Ingest into hybrid store
         result = self.store.ingest_frame(frame_data, self.frame_count)
@@ -1072,6 +1100,53 @@ class MLDataLogger:
             df = pd.DataFrame(self.csv_buffer)
             df.to_csv(csv_path, index=False)
             logging.info(f"Saved CSV to {csv_path} ({len(df)} frames)")
+
+    # ========================================================================
+    # BACKWARD COMPATIBILITY WITH DataIngestion.py
+    # ========================================================================
+
+    def get_dataframe(self):
+        """
+        Get current session data as pandas DataFrame
+
+        Backward compatible with DataIngestion.get_dataframe()
+        Returns DataFrame from CSV buffer (in-memory, fast)
+        """
+        if not self.csv_buffer:
+            import pandas as pd
+            return pd.DataFrame()
+
+        import pandas as pd
+        return pd.DataFrame(self.csv_buffer)
+
+    def get_last_logged_frame(self):
+        """
+        Get the most recently logged frame
+
+        Backward compatible with DataIngestion.get_last_logged_frame()
+        """
+        if not self.csv_buffer:
+            return None
+        return self.csv_buffer[-1]
+
+    def set_predictive_indices(self, preds: Dict[str, Any]) -> None:
+        """
+        Store predictive indices for next frame
+
+        Backward compatible with DataIngestion.set_predictive_indices()
+        This merges predictive indices into frame_data in log_frame()
+        """
+        if not hasattr(self, '_pending_predictive_indices'):
+            self._pending_predictive_indices = {}
+
+        if isinstance(preds, dict):
+            self._pending_predictive_indices.update(preds)
+
+    def save_to_csv(self, log_dir: str = "./Session_logs/"):
+        """
+        Alias for save_session() for backward compatibility
+        """
+        self.save_session(log_dir)
 
     def cleanup(self):
         """Cleanup resources"""

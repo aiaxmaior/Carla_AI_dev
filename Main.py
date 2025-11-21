@@ -45,7 +45,7 @@ import sys_task
 # import math
 # import re
 # import Sensors
-import DataIngestion
+from Core.Data.MLDataLogger import MLDataLogger
 
 # import pandas as pd
 import PreWelcomeSelect as pws
@@ -391,7 +391,15 @@ def game_loop(args, client, monitors, joystick_mappings=None):
                 carla_world.tick()
             logging.info("✅⏱️ Stabilization complete.")
 
-        data_ingestor = DataIngestion.DataIngestion()
+        # Initialize ML-ready data logger with PyArrow backend
+        import time
+        session_id = f"session_{time.strftime('%Y%m%d_%H%M%S')}"
+        data_ingestor = MLDataLogger(
+            session_id=session_id,
+            export_csv=True,  # Backward compatibility
+            export_parquet=True,  # ML-ready Parquet export
+            mmap_enabled=False  # Enable if using Jetson streaming
+        )
         predictive_manager = PredictiveManager(data_ingestor)
 
         clock = pygame.time.Clock()

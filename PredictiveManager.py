@@ -57,15 +57,16 @@ class PredictiveManager:
             latest_data = df.iloc[-1]
 
             # Map the DataFrame columns to the 'obs' dictionary expected by PredictiveIndices
+            # NOTE: Use (value or default) pattern for null-safety since pandas .get() returns None for null values
             obs_for_predictor = {
-                "velocity": latest_data.get('speed_kmh', 0) / 3.6,  # Convert km/h to m/s (fixed key name)
-                "acceleration_x": latest_data.get('acceleration_x', 0),
-                "yaw_rate": latest_data.get('angular_velocity_z', 0),
-                "lateral_offset": latest_data.get('distance_from_lane_center', 0),
-                "lane_width": latest_data.get('lane_width', 3.6),
-                "blinker": {0: None, 1: "left", 2: "right", 3: "hazard"}.get(latest_data.get('blinker_state')),
-                "lead_distance": latest_data.get('dist_nearest_vehicle'),
-                "lead_rel_speed": latest_data.get('relative_speed_nearest_vehicle'),
+                "velocity": (latest_data.get('speed_kmh') or 0) / 3.6,  # Convert km/h to m/s (null-safe)
+                "acceleration_x": latest_data.get('acceleration_x') or 0,
+                "yaw_rate": latest_data.get('angular_velocity_z') or 0,
+                "lateral_offset": latest_data.get('distance_from_lane_center') or 0,
+                "lane_width": latest_data.get('lane_width') or 3.6,
+                "blinker": {0: None, 1: "left", 2: "right", 3: "hazard"}.get(latest_data.get('blinker_state') or 0),
+                "lead_distance": latest_data.get('dist_nearest_vehicle'),  # Can be None (handled by PredictiveIndices)
+                "lead_rel_speed": latest_data.get('relative_speed_nearest_vehicle'),  # Can be None (handled by PredictiveIndices)
             }
 
             # Run the update with the latest timestamp and observation dictionary
