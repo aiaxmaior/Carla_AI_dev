@@ -144,7 +144,7 @@ class DynamicMapping:
 
         self._display_mapping_message(
             display_surface,
-            font_object=primary_font,
+            primary_font,  # Fixed: was font_object=primary_font (keyword arg)
             primary_message="Device Mapping:",
             instruction_message="Reuse Mapped Controls?",
             sub_message="Press ENTER to Reuse\nor\nESC to Map Controls Again",
