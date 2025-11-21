@@ -894,8 +894,8 @@ class HUD(object):
 
             pygame.draw.line(display, tick_col, (start_x, start_y), (end_x, end_y), 3)
 
-            # Draw numbers at major ticks
-            if tick_value % (major_tick_interval * 2) == 0 or tick_value == max_value:
+            # Draw numbers at ALL major ticks (for RPM: 1,2,3,4,5,6)
+            if tick_value % major_tick_interval == 0:
                 label_radius = radius - 30
                 label_x = center_x + label_radius * math.cos(angle_rad)
                 label_y = center_y - label_radius * math.sin(angle_rad)
@@ -912,7 +912,7 @@ class HUD(object):
 
             tick_value += major_tick_interval
 
-        # Draw minor tick marks
+        # Draw minor tick marks (with redline coloring)
         tick_value = 0
         while tick_value <= max_value:
             if tick_value % major_tick_interval != 0:  # Skip major ticks
@@ -927,7 +927,9 @@ class HUD(object):
                 end_x = center_x + tick_end_radius * math.cos(angle_rad)
                 end_y = center_y - tick_end_radius * math.sin(angle_rad)
 
-                pygame.draw.line(display, tick_color, (start_x, start_y), (end_x, end_y), 1)
+                # Color minor ticks red in redline zone (e.g., 4500, 5000, 5500 for RPM)
+                minor_tick_col = danger_color if (redline_threshold and tick_value >= redline_threshold) else tick_color
+                pygame.draw.line(display, minor_tick_col, (start_x, start_y), (end_x, end_y), 1)
 
             tick_value += minor_tick_interval
 
@@ -1144,8 +1146,7 @@ class HUD(object):
                 "harsh_score": f"{self._scores_frame_dict['scores'].get('DSS_DrivingSmoothness', 0)}",
                 "Server FPS": f"{self.server_fps:.0f}",
                 "Render FPS": f"{display_fps:.0f}",
-#                "gear":gear,
-#                "debug_info":self._debug_values,
+                "gear": gear,  # Re-enabled for gear display
             }
         else:
             self._info_text = {"title": "Player not ready"}
@@ -1336,12 +1337,12 @@ class HUD(object):
             # Gauge radius - 50% larger than before (was 0.42, now 0.63 of panel height)
             gauge_radius = int(panel_h * 0.63)
 
-            # LEFT: RPM Gauge (0-6000, redline at 5250)
+            # LEFT: RPM Gauge (0-6000, redline at 4500+ shows in red)
             rpm_center_x = panel_x + gauge_radius + padding
             rpm_center_y = panel_y + (panel_h // 2)
             self._render_radial_gauge(display, rpm_center_x, rpm_center_y, gauge_radius,
                                      rpm, 6000, "RPM", "x1000",
-                                     major_tick_interval=1000, redline_threshold=5250)
+                                     major_tick_interval=1000, redline_threshold=4500)
 
             # MIDDLE: Stats and Scores (compact vertical stack)
             stats_x = panel_x + int(panel_w * 0.40)
