@@ -269,9 +269,13 @@ class EventDetector:
         }
 
     def detect_immediate_events(self, frame_data: Dict[str, Any], frame_num: int) -> List[DetectedEvent]:
-        """Detect immediate events (single frame or sub-second)"""
+        """Detect immediate events (single frame or sub-second)
+
+        NOTE: Uses null-safe (value or default) pattern throughout since frame_data
+        values can be None at session start or when sensors haven't initialized yet.
+        """
         events = []
-        timestamp = frame_data.get('timestamp', time.time())
+        timestamp = frame_data.get('timestamp') or time.time()
 
         # Collision detection
         if frame_data.get('collision_occurred', False):
@@ -297,8 +301,8 @@ class EventDetector:
                 tags=["collision", "critical", "safety"]
             ))
 
-        # Harsh braking
-        accel_x = frame_data.get('acceleration_forward', frame_data.get('acceleration_x', 0))
+        # Harsh braking (null-safe)
+        accel_x = (frame_data.get('acceleration_forward') or frame_data.get('acceleration_x') or 0)
         if accel_x < self.thresholds['harsh_brake_ms2']:
             events.append(DetectedEvent(
                 event_type=EventType.HARSH_BRAKE,
@@ -338,8 +342,9 @@ class EventDetector:
                 tags=["harsh_driving", "acceleration"]
             ))
 
-        # Harsh cornering
-        g_lateral = frame_data.get('g_force_lateral', abs(frame_data.get('acceleration_lateral', 0)) / 9.81)
+        # Harsh cornering (null-safe)
+        accel_lateral = (frame_data.get('acceleration_lateral') or 0)
+        g_lateral = (frame_data.get('g_force_lateral') or abs(accel_lateral) / 9.81)
         if abs(g_lateral) > self.thresholds['harsh_corner_g']:
             events.append(DetectedEvent(
                 event_type=EventType.HARSH_CORNER,
@@ -359,8 +364,8 @@ class EventDetector:
                 tags=["harsh_driving", "cornering", "lateral"]
             ))
 
-        # Near-miss detection (low TTC)
-        ttc = frame_data.get('ttc_s', frame_data.get('time_to_collision', 99))
+        # Near-miss detection (low TTC) - null-safe
+        ttc = (frame_data.get('ttc_s') or frame_data.get('time_to_collision') or 99)
         if ttc < self.thresholds['near_miss_ttc_s']:
             events.append(DetectedEvent(
                 event_type=EventType.NEAR_MISS_FRONT,
@@ -426,9 +431,9 @@ class EventDetector:
                 tags=["traffic_violation", "red_light", "critical"]
             ))
 
-        # Speed violation
-        speed_limit = frame_data.get('speed_limit', 50)
-        speed = frame_data.get('speed_kmh', 0)
+        # Speed violation (null-safe - speed_limit can be None at session start)
+        speed_limit = (frame_data.get('speed_limit') or 50)  # Default 50 km/h if None
+        speed = (frame_data.get('speed_kmh') or 0)
         if speed > speed_limit * self.thresholds['speed_violation_ratio']:
             events.append(DetectedEvent(
                 event_type=EventType.SPEED_VIOLATION,
@@ -465,10 +470,10 @@ class EventDetector:
             return EventType.COLLISION_FRONT
 
     def _get_weather_desc(self, frame_data: Dict[str, Any]) -> str:
-        """Get weather condition description"""
-        cloudiness = frame_data.get('weather_cloudiness', 0)
-        precipitation = frame_data.get('weather_precipitation', 0)
-        fog = frame_data.get('weather_fog_density', 0)
+        """Get weather condition description (null-safe)"""
+        cloudiness = (frame_data.get('weather_cloudiness') or 0)
+        precipitation = (frame_data.get('weather_precipitation') or 0)
+        fog = (frame_data.get('weather_fog_density') or 0)
 
         if precipitation > 50:
             return "heavy_rain"
@@ -482,32 +487,39 @@ class EventDetector:
             return "clear"
 
     def _identify_collision_factors(self, frame_data: Dict[str, Any]) -> List[str]:
-        """Identify contributing factors to collision"""
+        """Identify contributing factors to collision (null-safe)"""
         factors = []
 
-        if frame_data.get('speed_kmh', 0) > frame_data.get('speed_limit', 50) * 1.2:
+        speed = (frame_data.get('speed_kmh') or 0)
+        speed_limit = (frame_data.get('speed_limit') or 50)
+        if speed > speed_limit * 1.2:
             factors.append("excessive_speed")
 
-        if frame_data.get('ttc_s', 99) < 1.0:
+        ttc = (frame_data.get('ttc_s') or 99)
+        if ttc < 1.0:
             factors.append("insufficient_following_distance")
 
-        if frame_data.get('weather_precipitation', 0) > 20:
+        precipitation = (frame_data.get('weather_precipitation') or 0)
+        if precipitation > 20:
             factors.append("adverse_weather")
 
-        if frame_data.get('nearby_vehicles_count', 0) > 10:
+        traffic_density = (frame_data.get('nearby_vehicles_count') or 0)
+        if traffic_density > 10:
             factors.append("high_traffic_density")
 
         return factors if factors else ["unknown"]
 
     def _identify_harsh_brake_factors(self, frame_data: Dict[str, Any], accel: float) -> List[str]:
-        """Identify why harsh braking occurred"""
+        """Identify why harsh braking occurred (null-safe)"""
         factors = []
 
-        ttc = frame_data.get('ttc_s', 99)
+        ttc = (frame_data.get('ttc_s') or 99)
         if ttc < 2.0:
             factors.append("emergency_avoidance")
 
-        if frame_data.get('speed_kmh', 0) > frame_data.get('speed_limit', 50) * 1.3:
+        speed = (frame_data.get('speed_kmh') or 0)
+        speed_limit = (frame_data.get('speed_limit') or 50)
+        if speed > speed_limit * 1.3:
             factors.append("speed_too_high")
 
         if frame_data.get('traffic_light_state') == 'Red':
@@ -519,10 +531,11 @@ class EventDetector:
         return factors if factors else ["unknown"]
 
     def _identify_harsh_corner_factors(self, frame_data: Dict[str, Any], g_force: float) -> List[str]:
-        """Identify why harsh cornering occurred"""
+        """Identify why harsh cornering occurred (null-safe)"""
         factors = []
 
-        if frame_data.get('speed_kmh', 0) > 60:
+        speed = (frame_data.get('speed_kmh') or 0)
+        if speed > 60:
             factors.append("excessive_speed_for_turn")
 
         if frame_data.get('is_junction', False):
