@@ -408,10 +408,10 @@ class EventDetector:
                 tags=["lane_discipline", "signaling"] if blinker != 0 else ["lane_violation", "unsafe"]
             ))
 
-        # Traffic light violation
+        # Traffic light violation (null-safe)
         if frame_data.get('traffic_light_state') == 'Red' and \
            frame_data.get('is_at_traffic_light', False) and \
-           frame_data.get('speed_kmh', 0) > 5:
+           (frame_data.get('speed_kmh') or 0) > 5:
             events.append(DetectedEvent(
                 event_type=EventType.RED_LIGHT_VIOLATION,
                 severity=EventSeverity.CRITICAL,

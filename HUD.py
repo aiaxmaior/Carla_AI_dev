@@ -354,7 +354,7 @@ class HUD(object):
                 return []
 
         except Exception as e:
-            logging.error(f"[Perception] Error getting objects: {e}")
+            logging.error(f"[Perception] Error getting objects: {e}", exc_info=True)
             return []
 
 
