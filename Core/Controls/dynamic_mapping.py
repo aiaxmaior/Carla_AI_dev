@@ -86,11 +86,9 @@ class DynamicMapping:
                 pygame.font.init()
             if not primary_font:
                 primary_font = pygame.font.Font(None, 36)
-            else:
-                primary_font = pygame.font.Font(None, 36)
         except Exception as e:
             logging.error(f"Could not load default font for mapping: {e}")
-            primary_font = pygame.font.Font(None,36)
+            primary_font = pygame.font.Font(None, 36)
 
         # --- 1) Load saved mappings if they exist ---
         try:
@@ -214,7 +212,6 @@ class DynamicMapping:
 
     def _display_mapping_message(
         self,
-        args,
         surface,
         font_object,
         primary_message,
@@ -226,15 +223,14 @@ class DynamicMapping:
         """Helper to display messages during dynamic mapping."""
         # --- Gradient Background ---
         # This will correctly cover the entire double-wide window
-        self._args = args
         top_color = (44, 62, 80)  # Dark Slate Blue
         bottom_color = (27, 38, 49)  # Very Dark Blue/Charcoal
-        screen_height = self._display.get_height()
+        screen_height = surface.get_height()
         for y in range(screen_height):
             r = top_color[0] + (bottom_color[0] - top_color[0]) * y // screen_height
             g = top_color[1] + (bottom_color[1] - top_color[1]) * y // screen_height
             b = top_color[2] + (bottom_color[2] - top_color[2]) * y // screen_height
-            pygame.draw.line(surface, (r, g, b), (0, y), (self._display.get_width(), y))
+            pygame.draw.line(surface, (r, g, b), (0, y), (surface.get_width(), y))
 
         # --- Font Setup (no changes needed here) ---
         if not hasattr(font_object, "render"):
@@ -253,10 +249,10 @@ class DynamicMapping:
         sub_font = panel_fonts['sub']
         detected_font = panel_fonts['detected']
         # --- Corrected Positioning for Multi-Monitor ---
-        center_x = self._display.get_width() // 2
+        center_x = surface.get_width() // 2
 
 
-        sizes = [(self._display.get_width(), screen_height)]
+        sizes = [(surface.get_width(), screen_height)]
         self._num_panels = max(
             1, sizes[0][0] / self._args.width
         )  # estimate from window width
