@@ -1,0 +1,27 @@
+{
+"initial_score": 100,
+"collision_penalties": {
+    "major_intensity_threshold": 2000,
+    "moderate_intensity_threshold": 500,
+    "moderate_penalty": 60,
+    "minor_penalty": 25
+},
+"lane_management_penalties": {
+    "violation_minor": 5,
+    "violation_moderate": 15,
+    "violation_severe": 30,
+    "violation_critical": 50,
+    "maneuver_unsignalled": 10,
+    "maneuver_unsafe": 25,
+    "turn_signal_fail": 10
+},
+"harsh_driving_penalties": {
+    "acceleration_g": 0.45,
+    "braking_g": 0.50,
+    "cornering_g": 0.55,
+    "accel_penalty": 15,
+    "brake_penalty": 15,
+    "corner_penalty": 20
+},
+"score_recovery": {"rate_per_tick": 0.05}
+}
