@@ -54,11 +54,9 @@ class EndScreen(object):
         self.button_hover_color = (75, 85, 99)
         self.button_text_color = (255, 255, 255)
 
-        # --- Corrected Positioning for Multi-Monitor ---
-        main_screen_offset_x = self.dim[0] // 4
-        single_screen_width = self.dim[0] // 4
-        center_x = main_screen_offset_x + (single_screen_width / 2)
-        
+        # --- Center on full ultrawide display ---
+        center_x = self.dim[0] // 2
+
         button_w, button_h = 350, 60
         button_y_start = self._height * 0.75
         button_spacing = button_h + 20
@@ -81,10 +79,8 @@ class EndScreen(object):
                 pygame.draw.line(self._background_surface, (r, g, b), (0, y), (self.dim[0], y))
         self.surface.blit(self._background_surface, (0, 0))
 
-        # --- Positioning for Multi-Monitor ---
-        main_screen_offset_x = self.dim[0] // 4
-        single_screen_width = self.dim[0] // 4
-        center_x = main_screen_offset_x + (single_screen_width / 2)
+        # --- Center on full ultrawide display ---
+        center_x = self.dim[0] // 2
 
         # Draw the main title, using the correct font key
         height_ratio = self._height/2160
@@ -92,14 +88,15 @@ class EndScreen(object):
         title_surf = title_font.render("SESSION ENDED", True, self.title_color)
         title_rect = title_surf.get_rect(center=(center_x, self._height * 0.25))
         self.surface.blit(title_surf, title_rect)
-        
+
         # --- Draw Final Scores using corrected font keys ---
         # CORRECTED: Mapped to the actual keys in the self.fonts dictionary
         score_index_font = self.fonts.get('title', pygame.font.Font(None, math.floor(40*height_ratio)))
         score_label_font = self.fonts.get('sub_label', pygame.font.Font(None, math.floor(24*height_ratio)))
         score_value_font = self.fonts.get('sub_value', pygame.font.Font(None, math.floor(32*height_ratio)))
-        
-        score_area_width = single_screen_width * 0.6
+
+        # Score area width based on full display, not single panel
+        score_area_width = self.dim[0] * 0.3
         score_area_x_start = center_x - (score_area_width / 2)
         y_pos = self._height * 0.30
 
@@ -201,20 +198,21 @@ class PersistentWarningManager(object):
         center_warnings = [data['warning'] for data in self.active_warnings.values() if data.get('is_critical_center', False)]
         panel_warnings = [data['warning'] for data in self.active_warnings.values() if not data.get('is_critical_center', False)]
 
-        # Render center warnings (critical)
+        # Render center warnings (critical) - centered on full ultrawide display
         if center_warnings:
             font = self.panel_fonts['large_val']
-            single_screen_width = self.screen_dim[0] // 4
-            main_screen_start_x = single_screen_width
-            center_x = main_screen_start_x + (single_screen_width // 2)
+            # Center on full ultrawide display
+            center_x = self.screen_dim[0] // 2
             y_pos = int(self.screen_dim[1] * 0.40)
 
             for text in center_warnings:
+                # Render text with black border for visibility
                 text_surf = font.render(text, True, (255, 50, 50))
-                bg_rect = text_surf.get_rect(center=(center_x, y_pos + text_surf.get_height() ))#// 2))
+                bg_rect = text_surf.get_rect(center=(center_x, y_pos + text_surf.get_height()))
                 bg_rect.inflate_ip(20, 15)
+                # 80% opacity background (204 = 0.8 * 255)
                 bg_surf = pygame.Surface(bg_rect.size, pygame.SRCALPHA)
-                bg_surf.fill((20, 20, 20, 180))
+                bg_surf.fill((20, 20, 20, 204))
 
                 display.blit(bg_surf, bg_rect.topleft)
                 display.blit(text_surf, text_surf.get_rect(center=bg_rect.center))
@@ -231,7 +229,8 @@ class PersistentWarningManager(object):
                 content_width = text_texture.get_width() + symbol_texture.get_width() + 5
                 box_width = content_width + padding * 2
                 surface = pygame.Surface((box_width, box_height), pygame.SRCALPHA)
-                surface.fill((80, 80, 0, 180), surface.get_rect())
+                # 80% opacity (204 = 0.8 * 255)
+                surface.fill((80, 80, 0, 204), surface.get_rect())
                 surface.blit(
                     symbol_texture,
                     (padding, (box_height - symbol_texture.get_height()) // 2),
@@ -288,23 +287,20 @@ class BlinkingAlert(object):
         box_h = text_surf.get_height() + 2 * pad_v
         box_w = text_surf.get_width() + 2 * pad_h
         self.surface = pygame.Surface((box_w, box_h), pygame.SRCALPHA)
-        self.surface.fill((20, 20, 20, 180))
+        # 80% opacity (204 = 0.8 * 255)
+        self.surface.fill((20, 20, 20, 204))
         self.surface.blit(
             text_surf,
             ((box_w - text_surf.get_width()) / 2, (box_h - text_surf.get_height()) / 2),
         )
 
-        # --- FIX: Calculate position relative to the main (right) screen ---
-        main_screen_offset_x = self.screen_dim[0] // 4
-        single_screen_width = self.screen_dim[0] // 4
-        center_x_on_main_screen = (
-            main_screen_offset_x + (single_screen_width - box_w) / 2
-        )
+        # --- Center on full ultrawide display ---
+        center_x = (self.screen_dim[0] - box_w) / 2
 
         self.initial_pos = (
-            [center_x_on_main_screen, int(self.screen_dim[1] * 0.4) - box_h / 2]
+            [center_x, int(self.screen_dim[1] * 0.4) - box_h / 2]
             if is_critical_center
-            else [center_x_on_main_screen, self.screen_dim[1]]
+            else [center_x, self.screen_dim[1]]
         )
         self.current_pos = list(self.initial_pos)
 

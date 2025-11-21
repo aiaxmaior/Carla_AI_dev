@@ -682,22 +682,41 @@ class HUD(object):
         self._messages = keep
         return y
     
+    def _render_text_with_border(self, font, text, text_color, border_color=(0, 0, 0), border_width=2):
+        """Render text with a black border for visibility on any background."""
+        # Render border (outline) by drawing text offset in 8 directions
+        base_surf = font.render(text, True, text_color)
+        w, h = base_surf.get_size()
+        # Create surface with alpha for the final text
+        final_surf = pygame.Surface((w + border_width * 2, h + border_width * 2), pygame.SRCALPHA)
+        # Draw border in 8 directions
+        for dx in [-border_width, 0, border_width]:
+            for dy in [-border_width, 0, border_width]:
+                if dx != 0 or dy != 0:
+                    border_surf = font.render(text, True, border_color)
+                    final_surf.blit(border_surf, (border_width + dx, border_width + dy))
+        # Draw main text on top
+        final_surf.blit(base_surf, (border_width, border_width))
+        return final_surf
+
     #Draw queued center/critical messages over Screen 2 using cached fonts
-    def _draw_center_notifications(self, surf):    
+    def _draw_center_notifications(self, surf):
         if not getattr(self, '_messages', None):
             return
         now = time.time()
         keep = []
-        single_screen_width = self.dim[0] // 4
-        main_screen_start_x = single_screen_width
-        center_x = main_screen_start_x + (single_screen_width // 2)
+        # Center on full ultrawide display, not 2nd panel
+        center_x = self.dim[0] // 2
         y_off = getattr(self, '_notification_base_pos_y', int(self.dim[1] * 0.85))
 
         for expires_at, text, color, is_center in reversed(self._messages):
             if expires_at > now:
                 if is_center:
-                    # big, centered banner using a cached font
-                    t_surf = self.panel_fonts['large_val'].render(text, True, color)
+                    # big, centered banner using cached font with black border
+                    t_surf = self._render_text_with_border(
+                        self.panel_fonts['large_val'], text, color,
+                        border_color=(0, 0, 0), border_width=2
+                    )
                     x_pos = center_x - (t_surf.get_width() // 2)
                     y_pos = y_off - t_surf.get_height()
                     if y_pos < self.dim[1] * 0.15:
@@ -1445,23 +1464,20 @@ class HUD(object):
             return
 
         W, H = self.dim
-        panel_w    = W // 4
-        panel_left = 1 * panel_w              # second panel
-        cx         = panel_left + panel_w//2
-        y          = int(H * 0.80)
+        # Center on full ultrawide display, not 2nd panel
+        cx = W // 2
+        # Shifted up 3% (from 80% to 77%)
+        y = int(H * 0.77)
 
-        left_x  = int(cx - panel_w * 0.10)
-        right_x = int(cx + panel_w * 0.10)
+        # 15% from center each side (30% total separation)
+        left_x  = int(cx - W * 0.15)
+        right_x = int(cx + W * 0.15)
 
         if self._blinker_state == 1 and self._blinker_left_img:
             display.blit(self._blinker_left_img,
                         self._blinker_left_img.get_rect(center=(left_x, y)))
-            # [PERF_HOT][DEBUG_ONLY] CRITICAL: Logs EVERY frame blinker is on! Remove or gate with --debug
-            logging.critical(f"blinker triggered left ⬅️ location: X={left_x},y= {y}")
 
         elif self._blinker_state == 2 and self._blinker_right_img:
-            # [PERF_HOT][DEBUG_ONLY] CRITICAL: Logs EVERY frame blinker is on! Remove or gate with --debug
-            logging.critical(f"blinker triggered right ▶️ location: X={right_x},y= {y}")
             display.blit(self._blinker_right_img,
                         self._blinker_right_img.get_rect(center=(right_x, y)))
 
