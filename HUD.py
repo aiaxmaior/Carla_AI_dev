@@ -160,6 +160,10 @@ class HUD(object):
         self._blinker_state = 0
         self.warning_manager = PersistentWarningManager(self.dim, self.scale_factor)
 
+        # DMS (Driver Monitoring System) state
+        self._dms_state = None
+        self._dms_enabled = getattr(args, 'enable_dms', False)
+
         # NEW: notification debounce state
         self._notify_cooldown = 1.0  # seconds  # NEW
         self._last_notify_ts = 0.0  # NEW
@@ -637,6 +641,10 @@ class HUD(object):
         """Update predictive indices for display"""
         self._predictive_indices = indices
 
+    def update_dms_state(self, dms_state):
+        """Update Driver Monitoring System state for display"""
+        self._dms_state = dms_state
+
     def toggle_info(self):
         self._show_info = not self._show_info
 
@@ -998,9 +1006,71 @@ class HUD(object):
                 surf = self.panel_fonts["small_label"].render(text, True, color)
                 display.blit(surf, (x + 10, y))
                 y += surf.get_height() + 3
-                
+
         return y
-    
+
+    def _render_dms_panel(self, display, x, y):
+        """Render Driver Monitoring System status panel"""
+        if not self._dms_enabled or not self._dms_state:
+            return y
+
+        # Title
+        title_surf = self.panel_fonts["sub_label"].render("Driver Monitoring", True, (200, 200, 200))
+        display.blit(title_surf, (x, y))
+        y += title_surf.get_height() + 5
+
+        state = self._dms_state
+
+        # Face detection status
+        face_status = "Detected" if state.face_detected else "NOT DETECTED"
+        face_color = (0, 255, 0) if state.face_detected else (255, 50, 50)
+        face_surf = self.panel_fonts["small_label"].render(f"Face: {face_status}", True, face_color)
+        display.blit(face_surf, (x + 10, y))
+        y += face_surf.get_height() + 3
+
+        # Attention score (if available)
+        if state.attention_score is not None:
+            att_val = state.attention_score
+            if att_val > 0.7:
+                att_color = (0, 255, 0)  # Green
+            elif att_val > 0.4:
+                att_color = (255, 200, 0)  # Yellow
+            else:
+                att_color = (255, 50, 50)  # Red
+            att_text = f"Attention: {att_val:.0%}"
+            att_surf = self.panel_fonts["small_label"].render(att_text, True, att_color)
+            display.blit(att_surf, (x + 10, y))
+            y += att_surf.get_height() + 3
+
+        # Drowsiness score (if available)
+        if state.drowsiness_score is not None:
+            drowsy_val = state.drowsiness_score
+            if drowsy_val < 0.3:
+                drowsy_color = (0, 255, 0)  # Green - alert
+            elif drowsy_val < 0.6:
+                drowsy_color = (255, 200, 0)  # Yellow
+            else:
+                drowsy_color = (255, 50, 50)  # Red - drowsy
+            drowsy_text = f"Drowsiness: {drowsy_val:.0%}"
+            drowsy_surf = self.panel_fonts["small_label"].render(drowsy_text, True, drowsy_color)
+            display.blit(drowsy_surf, (x + 10, y))
+            y += drowsy_surf.get_height() + 3
+
+        # Alert level
+        alert_colors = {
+            'NORMAL': (0, 255, 0),
+            'CAUTION': (255, 255, 0),
+            'WARNING': (255, 165, 0),
+            'CRITICAL': (255, 0, 0),
+        }
+        alert_name = state.alert_level.name if hasattr(state.alert_level, 'name') else str(state.alert_level)
+        alert_color = alert_colors.get(alert_name, (200, 200, 200))
+        alert_surf = self.panel_fonts["small_label"].render(f"Alert: {alert_name}", True, alert_color)
+        display.blit(alert_surf, (x + 10, y))
+        y += alert_surf.get_height() + 3
+
+        return y
+
 
     # [PERF_HOT] Called every frame from Main game loop
     def tick(self, world_instance, clock, idling , controller, display_fps):
@@ -1389,6 +1459,11 @@ class HUD(object):
 
         if self._predictive_indices:
             self._render_predictive_panel(display, h_offset, v_offset+math.floor(20*self.scale_factor))
+
+        # Render DMS panel if enabled
+        if self._dms_enabled and self._dms_state:
+            dms_y_offset = v_offset + math.floor(120 * self.scale_factor)  # Below predictive panel
+            self._render_dms_panel(display, h_offset, dms_y_offset)
 
         # Legacy fullscreen notifications
         if hasattr(self, '_active_notifications') and self._active_notifications:

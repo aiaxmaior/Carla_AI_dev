@@ -371,6 +371,18 @@ def game_loop(args, client, monitors, joystick_mappings=None):
             iLib.ilog("error", f"Hardware bridge error: {e}", "items", "js")
             hardware_bridge = None
 
+        # Initialize Driver Monitoring System (optional)
+        dms_instance = None
+        if getattr(args, 'enable_dms', False):
+            try:
+                from Core.Vision.DMS_Module import DMS, AlertLevel
+                dms_instance = DMS(camera_index=args.dms_camera)
+                dms_instance.start()
+                logging.info(f"DMS started on camera {args.dms_camera}")
+            except Exception as e:
+                logging.warning(f"Failed to initialize DMS: {e}")
+                dms_instance = None
+
         # Instantiate controller
         controller = DualControl(
             display, world_obj, args, joystick_mappings, persistent_keys, total_height
@@ -488,6 +500,14 @@ def game_loop(args, client, monitors, joystick_mappings=None):
                 # [PERF_HOT][DEBUG_ONLY] Changed to debug to eliminate frame-level spam
                 logging.debug(f"Seatbelt state: {'ON' if seatbelt_state else 'OFF'}")
                 controller._seatbelt_state = seatbelt_state
+
+                # Get DMS state if enabled
+                dms_state = None
+                if dms_instance:
+                    dms_state = dms_instance.get_latest_state()
+                    hud.update_dms_state(dms_state)
+                    mvd_feature_extractor.update_dms_score(dms_state)
+
                 velocity = world_obj.player.get_velocity()
                 speed_kmh = 3.6 * velocity.length()
                 # collision_data = (
@@ -559,6 +579,14 @@ def game_loop(args, client, monitors, joystick_mappings=None):
     finally:
         #        if hardware_bridge:
         #            hardware_bridge.stop()
+
+        # Stop DMS if running
+        if 'dms_instance' in locals() and dms_instance:
+            try:
+                dms_instance.stop()
+                logging.info("DMS stopped.")
+            except Exception as e:
+                logging.debug(f"DMS cleanup: {e}")
 
         if "data_ingestor" in locals():
             data_ingestor.save_to_csv()
@@ -746,6 +774,18 @@ def main():
         "--dev",
         action="store_true",  # Correct way to handle a boolean flag
         help="Skip selection screens and go straight to simulation.",
+    )
+    argparser.add_argument(
+        "--enable-dms",
+        action="store_true",
+        help="Enable Driver Monitoring System (requires webcam).",
+    )
+    argparser.add_argument(
+        "--dms-camera",
+        metavar="INDEX",
+        default=0,
+        type=int,
+        help="Camera index for DMS (default: 0).",
     )
     argparser.add_argument(
         "--seatbelt-override",

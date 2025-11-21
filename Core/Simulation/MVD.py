@@ -46,6 +46,7 @@ class MVDFeatureExtractor:
         self._collision_avoidance_score = float(self.penalties["initial_score"])
         self._lane_management_score = float(self.penalties["initial_score"])
         self._harsh_driving_score = float(self.penalties["initial_score"])
+        self._dms_score = float(self.penalties["initial_score"])  # Driver Monitoring Score
 
         # State variables
         self.previous_velocity_vector = carla.Vector3D(0, 0, 0)
@@ -88,6 +89,14 @@ class MVDFeatureExtractor:
                 "brake_penalty": 15,
                 "corner_penalty": 20,
             },
+            "dms_penalties": {
+                "distraction_threshold": 0.5,
+                "drowsiness_threshold": 0.5,
+                "no_face_penalty": 5,
+                "distraction_penalty": 10,
+                "drowsiness_penalty": 15,
+                "critical_alert_penalty": 25,
+            },
             "score_recovery": {"rate_per_tick": 0.05},
         }
 
@@ -115,6 +124,7 @@ class MVDFeatureExtractor:
         self._collision_avoidance_score = float(self.penalties["initial_score"])
         self._lane_management_score = float(self.penalties["initial_score"])
         self._harsh_driving_score = float(self.penalties["initial_score"])
+        self._dms_score = float(self.penalties["initial_score"])
 
         self.previous_velocity_vector = carla.Vector3D(0, 0, 0)
         self.last_update_time = None
@@ -321,6 +331,49 @@ class MVDFeatureExtractor:
         self.previous_velocity_vector = current_velocity
         self.last_update_time = current_time
 
+    def update_dms_score(self, dms_state):
+        """
+        Updates DMS (Driver Monitoring System) score based on driver attention state.
+        Should be called from Main.py when DMS is enabled.
+
+        Args:
+            dms_state: DriverState dataclass from DMS_Module, or None if no face detected
+        """
+        if dms_state is None:
+            return
+
+        p = self.penalties.get("dms_penalties", {})
+        initial_score = self.penalties["initial_score"]
+        recovery_rate = self.penalties["score_recovery"]["rate_per_tick"]
+
+        penalty = 0
+
+        # Penalty for no face detected (driver looking away or not present)
+        if not dms_state.face_detected:
+            penalty += p.get("no_face_penalty", 5)
+
+        # Penalty for distraction
+        if dms_state.distraction_score is not None:
+            if dms_state.distraction_score > p.get("distraction_threshold", 0.5):
+                penalty += p.get("distraction_penalty", 10)
+
+        # Penalty for drowsiness
+        if dms_state.drowsiness_score is not None:
+            if dms_state.drowsiness_score > p.get("drowsiness_threshold", 0.5):
+                penalty += p.get("drowsiness_penalty", 15)
+
+        # Critical alert penalty (microsleep, severe drowsiness)
+        if hasattr(dms_state, 'alert_level'):
+            alert_name = dms_state.alert_level.name if hasattr(dms_state.alert_level, 'name') else str(dms_state.alert_level)
+            if alert_name == 'CRITICAL':
+                penalty += p.get("critical_alert_penalty", 25)
+
+        # Apply penalty or recover
+        if penalty > 0:
+            self._dms_score = max(0, self._dms_score - penalty)
+        elif self._dms_score < initial_score:
+            self._dms_score = min(initial_score, self._dms_score + recovery_rate)
+
     def _standardize_score(self, score: float) -> float:
         """Standardizes a given score to a 0-1 range."""
         max_score = self.penalties["initial_score"]
@@ -347,7 +400,7 @@ class MVDFeatureExtractor:
 
     def get_mvd_datalog_metrics(self) -> dict:
         """Returns a dictionary of all MVD scores and indices for logging."""
-        indices = self.get_standardized_indices()   
+        indices = self.get_standardized_indices()
         return {
 #            "current_velocity": self.previous_velocity_vector,
 #            "collision_detected": self._collision_detected_this_tick,
@@ -358,6 +411,7 @@ class MVDFeatureExtractor:
             "PSS_ProactiveSafety":   float(self._collision_avoidance_score),
             "LDS_LaneDiscipline":    float(self._lane_management_score),
             "DSS_DrivingSmoothness": float(self._harsh_driving_score),
+            "DMS_DriverMonitoring":  float(self._dms_score),
 
             # keep existing fields for compatibility
             "index_mbi_0_1": indices.get("mbi_0_1"),
@@ -365,4 +419,5 @@ class MVDFeatureExtractor:
             "index_lmi_0_1": indices.get("lmi_0_1"),
             "score_lane_raw": self._lane_management_score,
             "score_harsh_driving_raw": self._harsh_driving_score,
+            "score_dms_raw": self._dms_score,
         }
