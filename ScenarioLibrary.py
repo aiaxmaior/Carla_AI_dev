@@ -1,4 +1,22 @@
 # ScenarioLibrary.py
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Scenario config loader (NOT in hot path - init only)
+# [ ] | Hot-path functions: None (called at startup/menu only)
+# [ ] |- Heavy allocs in hot path? N/A
+# [ ] |- pandas/pyarrow/json/disk/net in hot path? Disk reads at init only
+# [ ] | Graphics here? No
+# [ ] | Data produced (tick schema?): Config dicts
+# [ ] | Storage (Parquet/Arrow/CSV/none): None (reads configs)
+# [ ] | Queue/buffer used?: No
+# [ ] | Session-aware? No
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_OK] NOT in hot path - menu/init only
+# 2. [PERF_OK] Lightweight config loading
+# ============================================================================
+
 # import os
 import logging
 from pathlib import Path

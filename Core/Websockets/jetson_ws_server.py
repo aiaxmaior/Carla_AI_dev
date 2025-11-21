@@ -1,4 +1,24 @@
 # jetson_ws_server.py
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: WebSocket server for Jetson/LLM streaming
+# [X] | Hot-path functions: handle(), consumer_loop() - async event loop
+# [X] |- Heavy allocs in hot path? Moderate - JSON parsing per message
+# [X] |- pandas/pyarrow/json/disk/net in hot path? YES - network I/O (WebSocket)
+# [ ] | Graphics here? No
+# [X] | Data produced (tick schema?): Telemetry stream to external clients
+# [ ] | Storage (Parquet/Arrow/CSV/none): None (streams to external system)
+# [X] | Queue/buffer used?: YES - asyncio.Queue (maxsize=1000)
+# [ ] | Session-aware? No
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_OK] Async I/O (websockets) isolates from main thread
+# 2. [PERF_OK] Queue backpressure prevents overload
+# 3. [PERF_SPLIT] JSON parsing per message - lightweight but adds up
+# 4. [PERF_OK] NOT in main sim loop (separate process/thread)
+# ============================================================================
+
 import asyncio, json, logging
 import websockets
 

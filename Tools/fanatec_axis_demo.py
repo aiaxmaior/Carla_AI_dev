@@ -1,3 +1,22 @@
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Test/demo script for Fanatec axis calibration (NOT in hot path)
+# [ ] | Hot-path functions: None (standalone demo/test)
+# [ ] |- Heavy allocs in hot path? N/A
+# [ ] |- pandas/pyarrow/json/disk/net in hot path? No
+# [X] | Graphics here? YES - pygame (demo only)
+# [ ] | Data produced (tick schema?): None (console output only)
+# [ ] | Storage (Parquet/Arrow/CSV/none): None
+# [ ] | Queue/buffer used?: No
+# [ ] | Session-aware? No
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_OK] Test/demo script - NOT in hot path
+# 2. [PERF_OK] pygame operations acceptable for testing
+# 3. [PERF_OK] No performance concerns
+# ============================================================================
+
 import pygame
 import sys
 

@@ -590,11 +590,15 @@ class TitleScreen(object):
 
         try:
             logo_surface = pygame.image.load(
-                "./images/Logo_product.png"
+                "./images/logo_duhd.png"
             ).convert_alpha()
+            # Logo is 3840x1080 (ultrawide) - scale to fit display width
             w, h = logo_surface.get_size()
+            # Scale to fit 80% of display width while maintaining aspect ratio
+            target_w = int(self._W * 0.8)
+            scale = target_w / w
             self._logo_img = pygame.transform.smoothscale(
-                logo_surface, (int(w * 0.3), int(h * 0.3))
+                logo_surface, (int(w * scale), int(h * scale))
             )
         except pygame.error as e:
             logging.warning(f"Could not load logo image for title screen: {e}")

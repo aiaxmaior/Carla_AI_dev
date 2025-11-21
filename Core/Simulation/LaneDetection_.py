@@ -2,6 +2,24 @@
 LaneDetection.py
 Placeholder module for lane detection logic.
 """
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Lane detection PLACEHOLDER (empty stub classes)
+# [ ] | Hot-path functions: None (not implemented)
+# [ ] |- Heavy allocs in hot path? N/A - placeholder only
+# [ ] |- pandas/pyarrow/json/disk/net in hot path? N/A
+# [ ] | Graphics here? No
+# [ ] | Data produced (tick schema?): None
+# [ ] | Storage (Parquet/Arrow/CSV/none): None
+# [ ] | Queue/buffer used?: No
+# [ ] | Session-aware? No
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PLACEHOLDER] NOT IMPLEMENTED - empty stub classes only
+# 2. [PLACEHOLDER] No actual functionality
+# 3. [PLACEHOLDER] Future implementation will need performance review
+# ============================================================================
 
 
 class LaneDetector:

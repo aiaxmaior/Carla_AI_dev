@@ -8,6 +8,24 @@ It creates backups, moves files, updates imports, and verifies everything works.
 
 Usage: python migrate_to_modular.py [--dry-run] [--backup-dir BACKUP_DIR]
 """
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Migration utility script (NOT in hot path)
+# [ ] | Hot-path functions: None (one-time migration tool)
+# [ ] |- Heavy allocs in hot path? N/A - not in hot path
+# [X] |- pandas/pyarrow/json/disk/net in hot path? File I/O, subprocess calls
+# [ ] | Graphics here? No
+# [ ] | Data produced (tick schema?): None
+# [ ] | Storage (Parquet/Arrow/CSV/none): None
+# [ ] | Queue/buffer used?: No
+# [ ] | Session-aware? No
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_OK] NOT in hot path - one-time migration utility
+# 2. [PERF_OK] File I/O acceptable for migration tool
+# 3. [PERF_OK] Subprocess calls acceptable for setup/migration
+# ============================================================================
 
 import os
 import shutil

@@ -1,4 +1,23 @@
 # MozaArduinoVirtualGamepad.py
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Hardware bridge - translates Moza + Arduino to virtual gamepad
+# [X] | Hot-path functions: _poll_*_device() in background threads
+# [ ] |- Heavy allocs in hot path? No - runs in separate threads
+# [ ] |- pandas/pyarrow/json/disk/net in hot path? No (JSON config load at init)
+# [ ] | Graphics here? No
+# [ ] | Data produced (tick schema?): Gamepad state (threaded)
+# [ ] | Storage (Parquet/Arrow/CSV/none): None
+# [X] | Queue/buffer used?: No - direct state updates
+# [X] | Session-aware? No
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_OK] Threaded I/O - isolated from main tick loop
+# 2. [PERF_OK] evdev polling is efficient
+# 3. [PERF_SPLIT] Thread safety - ensure no GIL contention with main thread
+# ============================================================================
+
 import threading
 import time
 import vgamepad as vg

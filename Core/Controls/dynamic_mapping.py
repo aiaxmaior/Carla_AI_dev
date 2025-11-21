@@ -1,3 +1,22 @@
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Joystick configuration UI (NOT in hot path - init/menu only)
+# [ ] | Hot-path functions: None (runs at startup or when remapping controls)
+# [X] |- Heavy allocs in hot path? N/A - not in hot path
+# [X] |- pandas/pyarrow/json/disk/net in hot path? Disk I/O at config save only
+# [X] | Graphics here? YES - pygame rendering (gradient fill, text, UI)
+# [ ] | Data produced (tick schema?): None (config JSON only)
+# [X] | Storage (Parquet/Arrow/CSV/none): JSON (joystick_mappings.json)
+# [ ] | Queue/buffer used?: No
+# [ ] | Session-aware? No
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_OK] NOT in hot path - only runs during controller config
+# 2. [PERF_OK] Gradient fill loop (L210) acceptable - not in game loop
+# 3. [PERF_OK] Font rendering acceptable - UI only
+# ============================================================================
+
 import pygame
 import sys
 import os

@@ -12,6 +12,25 @@ Recent Date: 09.12.2025
 Versioning: v0.3.2
 """
 
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Main orchestration, game loop, CARLA connection, session mgmt
+# [X] | Hot-path functions: game_loop() main tick loop (L331-433)
+# [X] |- Heavy allocs in hot path? YES - dict creation every frame (L411-419)
+# [X] |- pandas/pyarrow/json/disk/net in hot path? CSV save in finally only
+# [ ] | Graphics here? No (delegated to World/HUD)
+# [X] | Data produced (tick schema?): metrics dict per frame
+# [X] | Storage (Parquet/Arrow/CSV/none): CSV via DataIngestion
+# [X] | Queue/buffer used?: DataIngestion handles internally
+# [X] | Session-aware? (session_id/tick_index): Yes (frame from snapshot)
+# [X] | Debug-only heavy features?: xrandr logging, verbose iLib.ilog
+# Top 3 perf risks:
+# 1. [PERF_HOT] Logging spam in tick loop (L374 seatbelt every frame, L342, L1005/1008 blinker)
+# 2. [PERF_HOT] Dict allocation every frame (L411-419) - should reuse or pool
+# 3. [PERF_SPLIT] Heavy imports at module level (carla, pygame, pandas-commented but DataIngestion imports it)
+# ============================================================================
+
 import argparse
 import logging
 import os
@@ -133,6 +152,7 @@ def ensure_evdev_map(force=False, moza_event=None, arduino_event=None):
     return True
 
 
+# [PERF_HOT] Main game loop - runs continuously every tick
 def game_loop(args, client, monitors, joystick_mappings=None):
     """
     Main simulation loop. Handles a single session from start to end.
@@ -377,6 +397,7 @@ def game_loop(args, client, monitors, joystick_mappings=None):
         clock = pygame.time.Clock()
 
         # --- Main Tick Loop for this Session ---
+        # [PERF_HOT] Critical path: This loop runs at 50 FPS (every 20ms)
         while True:
             clock.tick(50)
 
@@ -428,14 +449,15 @@ def game_loop(args, client, monitors, joystick_mappings=None):
                     world_obj.lane_invasion_sensor_instance.tick()
 
                 # --- Data Gathering for Logging and Scoring ---
-                # seatbelt_state = hardware_bridge._seatbelt_fastened
+                # Check seatbelt state (with override option)
                 if args.seatbelt_override:
                     seatbelt_state = True
                 else:
                     seatbelt_state = (
                         hardware_bridge._seatbelt_fastened if hardware_bridge else False
                     )
-                logging.info(f"Seatbelt state: {'ON' if seatbelt_state else 'OFF'}")
+                # [PERF_HOT][DEBUG_ONLY] Changed to debug to eliminate frame-level spam
+                logging.debug(f"Seatbelt state: {'ON' if seatbelt_state else 'OFF'}")
                 controller._seatbelt_state = seatbelt_state
                 velocity = world_obj.player.get_velocity()
                 speed_kmh = 3.6 * velocity.length()
@@ -468,6 +490,7 @@ def game_loop(args, client, monitors, joystick_mappings=None):
                 overall_dp_score = mvd_feature_extractor.get_overall_mvd_score()
 
                 # --- RESTORED: Per-frame data logging ---
+                # [PERF_HOT] Dict allocation every frame - consider object pooling or reuse
                 control_datalog = controller.get_datalog()
                 mvd_datalog = mvd_feature_extractor.get_mvd_datalog_metrics()
                 metrics = {
@@ -701,7 +724,96 @@ def main():
         help="Force seatbelt state to ON for testing.",
     )
 
+    # ========================================================================
+    # Perception System Configuration
+    # ========================================================================
+    argparser.add_argument(
+        '--perception-mode',
+        choices=['programmatic', 'metadata', 'minimal-viable', 'lidar-hybrid'],
+        default='programmatic',
+        help='Perception system mode (default: programmatic for compatibility, use --perception-mode lidar-hybrid for best performance)'
+    )
+
+    argparser.add_argument(
+        '--danger-distance',
+        type=float,
+        default=15.0,
+        help='DANGER zone threshold in meters (default: 15m, red bbox)'
+    )
+
+    argparser.add_argument(
+        '--caution-distance',
+        type=float,
+        default=30.0,
+        help='CAUTION zone threshold in meters (default: 30m, yellow bbox)'
+    )
+
+    argparser.add_argument(
+        '--safe-distance',
+        type=float,
+        default=100.0,
+        help='SAFE zone threshold in meters (default: 100m, no bbox by default)'
+    )
+
+    argparser.add_argument(
+        '--show-danger-bbox',
+        action='store_true',
+        default=True,
+        help='Show bounding boxes for DANGER zone objects (default: True)'
+    )
+
+    argparser.add_argument(
+        '--no-show-danger-bbox',
+        action='store_true',
+        default=False,
+        help='Disable danger zone bounding boxes'
+    )
+
+    argparser.add_argument(
+        '--show-caution-bbox',
+        action='store_true',
+        default=False,
+        help='Show bounding boxes for CAUTION zone objects (default: False)'
+    )
+
+    argparser.add_argument(
+        '--no-ground-truth-matching',
+        action='store_true',
+        default=False,
+        help='Disable ground truth actor matching in LIDAR mode (faster, no speed data)'
+    )
+
+    argparser.add_argument(
+        '--lidar-range',
+        type=float,
+        default=None,
+        help='LIDAR sensor range in meters (default: matches safe-distance)'
+    )
+
+    argparser.add_argument(
+        '--lidar-points-per-second',
+        type=int,
+        default=56000,
+        help='LIDAR points per second (default: 56000, higher = more accurate but slower)'
+    )
+
+    argparser.add_argument(
+        '--lidar-rotation-frequency',
+        type=float,
+        default=10.0,
+        help='LIDAR rotation frequency in Hz (default: 10Hz)'
+    )
+
     args = argparser.parse_args()
+
+    # Process perception arguments
+    if args.no_show_danger_bbox:
+        args.show_danger_bbox = False
+
+    # Set LIDAR range to match safe distance if not specified
+    if args.lidar_range is None:
+        args.lidar_range = args.safe_distance
+
     game_loop_reached = False
     prewelcome_options = pws.pre_welcome_select()
     # Get the original state of all monitors before doing anything else

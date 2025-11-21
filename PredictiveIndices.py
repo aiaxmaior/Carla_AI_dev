@@ -1,4 +1,22 @@
 # PredictiveIndices.py
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Predictive safety calculations (TLC, TTC, harsh operation risk)
+# [X] | Hot-path functions: update() - called via PredictiveManager (every 10 frames)
+# [X] |- Heavy allocs in hot path? Minimal - uses deque rolling buffers
+# [ ] |- pandas/pyarrow/json/disk/net in hot path? No (pure math)
+# [ ] | Graphics here? No
+# [X] | Data produced (tick schema?): Predictive indices dict per update
+# [ ] | Storage (Parquet/Arrow/CSV/none): None (consumed by HUD)
+# [X] | Queue/buffer used?: YES - RollingSignal uses deque (efficient)
+# [X] | Session-aware? No - rolling window state only
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_OK] update() throttled to every 10 frames by PredictiveManager - acceptable
+# 2. [PERF_OK] deque operations are O(1) for append/popleft - efficient
+# 3. [PERF_OK] Pure math (no CARLA queries, no I/O) - very fast
+# ============================================================================
 
 from collections import deque
 from dataclasses import dataclass, field

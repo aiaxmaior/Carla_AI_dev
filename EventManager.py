@@ -1,3 +1,22 @@
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Event notification manager (prevents spam, manages cooldowns)
+# [X] | Hot-path functions: report(), tick() - called every frame
+# [X] |- Heavy allocs in hot path? Minimal - dict updates only
+# [ ] |- pandas/pyarrow/json/disk/net in hot path? No
+# [ ] | Graphics here? No (triggers HUD notifications)
+# [X] | Data produced (tick schema?): Event state dict
+# [ ] | Storage (Parquet/Arrow/CSV/none): None
+# [ ] | Queue/buffer used?: No - direct state management
+# [X] | Session-aware? No
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_OK] tick() lightweight - dict cleanup only
+# 2. [PERF_OK] report() de-bounces notifications (good)
+# 3. [PERF_OK] Minimal overhead
+# ============================================================================
+
 import time
 import numpy as np
 from Core.Vision.VisionPerception import Perception

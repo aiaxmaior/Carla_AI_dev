@@ -1,4 +1,23 @@
 # MVD.py
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Scoring engine - MVD (collision, lane, harsh driving)
+# [X] | Hot-path functions: update_scores() called every tick
+# [X] |- Heavy allocs in hot path? Minimal - returns dict per tick
+# [ ] |- pandas/pyarrow/json/disk/net in hot path? No (JSON config load at init only)
+# [ ] | Graphics here? No
+# [X] | Data produced (tick schema?): Score dict per tick
+# [ ] | Storage (Parquet/Arrow/CSV/none): None (consumed by DataIngestion)
+# [ ] | Queue/buffer used?: No
+# [X] | Session-aware? No - stateless per-frame scoring
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_HOT] update_scores() called every tick - MUST be lightweight (currently is)
+# 2. [PERF_OK] JSON config load only at __init__ - acceptable
+# 3. [PERF_OK] Math operations are simple (comparisons, clamps) - acceptable
+# ============================================================================
+
 import logging
 import carla
 import math

@@ -12,6 +12,26 @@ memory. It flags violations and events in real-time as frames are logged.
 
 """
 
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Data logging and violation flagging
+# [X] | Hot-path functions: log_frame() called every tick
+# [X] |- Heavy allocs in hot path? YES - large dict creation + buffered pandas append
+# [X] |- pandas/pyarrow/json/disk/net in hot path? YES - DataFrame append every N frames
+# [ ] | Graphics here? No
+# [X] | Data produced (tick schema?): Comprehensive frame_record dict per tick
+# [X] | Storage (Parquet/Arrow/CSV/none): CSV export (save_to_csv at end of session)
+# [X] | Queue/buffer used?: YES - _frame_buffer batches inserts (buffer_size=100)
+# [X] | Session-aware? Should add session_id to records
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_HOT] log_frame() creates MASSIVE dict every tick (L122-onwards) - very heavy
+# 2. [PERF_HOT] Helper methods (_extract_environmental_context, _extract_vehicle_physics) in tick path
+# 3. [PERF_HOT] DataFrame append every 100 frames - pandas concat is expensive
+# 4. [PERF_SPLIT] Consider: lighter schema, or async logging to separate thread
+# ============================================================================
+
 import pandas as pd
 import os
 import time

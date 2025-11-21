@@ -11,6 +11,25 @@ Uses pandas rolling windows to aggregate pre-flagged data from DataIngestion.
 No violation detection logic - just statistical aggregation and JSONL export.
 """
 
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Analytics / windowing - NOT in hot path (called periodically)
+# [X] | Hot-path functions: NONE (called on-demand or end-of-session)
+# [ ] |- Heavy allocs in hot path? N/A (not in hot path)
+# [X] |- pandas/pyarrow/json/disk/net in hot path? Heavy pandas but NOT in tick loop
+# [ ] | Graphics here? No
+# [X] | Data produced (tick schema?): Window aggregations (5s windows w/ 2.5s overlap)
+# [X] | Storage (Parquet/Arrow/CSV/none): JSONL export
+# [ ] | Queue/buffer used?: No (processes DataFrame directly)
+# [X] | Session-aware? Timestamps only (no session_id yet)
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_OK] pandas operations (rolling, resample) are NOT in tick loop - acceptable
+# 2. [PERF_SPLIT] Could add session_id to window metadata for multi-session analysis
+# 3. [PERF_OK] JSONL export only on-demand (export_to_jsonl) - acceptable
+# ============================================================================
+
 import json
 import logging
 import pandas as pd

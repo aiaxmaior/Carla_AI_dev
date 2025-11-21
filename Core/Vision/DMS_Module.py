@@ -6,6 +6,25 @@ Description: Handles eye tracking, gaze estimation, drowsiness detection, and di
 Cross-platform compatilbility with both CARLA simulator and Orin field deployment - optimization for edge devices.
 
 """
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Driver Monitoring System with MediaPipe face tracking
+# [X] | Hot-path functions: _process_frame() runs in separate thread at ~30 FPS
+# [X] |- Heavy allocs in hot path? Moderate - numpy arrays, dataclass creation per frame
+# [ ] |- pandas/pyarrow/json/disk/net in hot path? No (pure computer vision)
+# [X] | Graphics here? YES - OpenCV frame processing + MediaPipe inference
+# [X] | Data produced (tick schema?): DriverState dataclass per frame
+# [ ] | Storage (Parquet/Arrow/CSV/none): None (real-time only)
+# [X] | Queue/buffer used?: YES - frame_queue, state_queue (producer-consumer)
+# [ ] | Session-aware? No
+# [ ] | Debug-only heavy features?: get_debug_frame() with overlay rendering
+# Top 3 perf risks:
+# 1. [PERF_HOT] MediaPipe FaceMesh inference at 30 FPS - GPU-accelerated (TensorRT optional)
+# 2. [PERF_OK] Runs in SEPARATE THREAD - isolated from main game loop (good design)
+# 3. [PERF_SPLIT] GPU allocation at import time (L64-85) - must run before CARLA
+# NOTE: DMS runs independently and does NOT block main game loop
+# ============================================================================
 
 import os
 import sys

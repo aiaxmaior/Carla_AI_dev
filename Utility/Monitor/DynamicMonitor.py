@@ -1,3 +1,22 @@
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Monitor management (xrandr, multi-display setup)
+# [ ] | Hot-path functions: None (runs at startup and cleanup only)
+# [X] |- Heavy allocs in hot path? N/A - init/cleanup only
+# [X] |- pandas/pyarrow/json/disk/net in hot path? xrandr subprocess at init
+# [ ] | Graphics here? No (configures displays, doesn't render)
+# [ ] | Data produced (tick schema?): Monitor layout config
+# [ ] | Storage (Parquet/Arrow/CSV/none): None
+# [ ] | Queue/buffer used?: No
+# [ ] | Session-aware? No
+# [ ] | Debug-only heavy features?: xrandr logging
+# Top 3 perf risks:
+# 1. [PERF_OK] NOT in hot path - runs at startup/shutdown only
+# 2. [PERF_OK] xrandr subprocess acceptable for init
+# 3. [DEBUG_ONLY] Verbose logging should be gated
+# ============================================================================
+
 import re
 import subprocess
 import os

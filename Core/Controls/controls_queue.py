@@ -1,3 +1,22 @@
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: Input control - keyboard, joystick, hardware bridge integration
+# [X] | Hot-path functions: parse_events(), process_commands() called every tick
+# [X] |- Heavy allocs in hot path? Moderate - dict creation for datalog
+# [ ] |- pandas/pyarrow/json/disk/net in hot path? No
+# [ ] | Graphics here? No
+# [X] | Data produced (tick schema?): Control state dict + datalog dict
+# [ ] | Storage (Parquet/Arrow/CSV/none): None (consumed by DataIngestion)
+# [ ] | Queue/buffer used?: No - direct event processing
+# [X] | Session-aware? No
+# [ ] | Debug-only heavy features?: DynamicMapping UI (gated)
+# Top 3 perf risks:
+# 1. [PERF_HOT] parse_events() processes pygame events every tick
+# 2. [PERF_HOT] process_commands() applies control + steering model math every tick
+# 3. [PERF_OK] Steering.py math is lightweight - acceptable
+# ============================================================================
+
 import collections
 import logging
 import math

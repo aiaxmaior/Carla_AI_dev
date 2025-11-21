@@ -1,3 +1,22 @@
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: UI helpers (EndScreen, warnings, alerts, help text)
+# [X] | Hot-path functions: PersistentWarningManager.render() in HUD loop
+# [X] |- Heavy allocs in hot path? Moderate - font renders, surface blits
+# [ ] |- pandas/pyarrow/json/disk/net in hot path? No
+# [X] | Graphics here? YES - EndScreen rendering, warnings
+# [ ] | Data produced (tick schema?): UI state only
+# [ ] | Storage (Parquet/Arrow/CSV/none): None
+# [ ] | Queue/buffer used?: No
+# [ ] | Session-aware? No
+# [X] | Debug-only heavy features?: HelpText overlay
+# Top 3 perf risks:
+# 1. [PERF_HOT] EndScreen.run() blocks main loop (acceptable - end of session)
+# 2. [PERF_HOT] PersistentWarningManager font renders if called every frame
+# 3. [PERF_OK] Most helpers NOT in hot path (EndScreen, HelpText)
+# ============================================================================
+
 import carla
 import pygame
 import os

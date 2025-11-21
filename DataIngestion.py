@@ -1,3 +1,22 @@
+# ============================================================================
+# PERF CHECK (file-level):
+# ============================================================================
+# [X] | Role: ROOT-LEVEL DataIngestion (likely legacy - Core/Simulation/DataIngestion is newer)
+# [X] | Hot-path functions: log_frame() called every tick
+# [X] |- Heavy allocs in hot path? YES - dict creation + list append per frame
+# [X] |- pandas/pyarrow/json/disk/net in hot path? pandas conversion in get_dataframe()
+# [ ] | Graphics here? No
+# [X] | Data produced (tick schema?): Frame dict per tick (appended to list)
+# [X] | Storage (Parquet/Arrow/CSV/none): CSV export (save_to_csv)
+# [X] | Queue/buffer used?: Simple list (_session_data) - no batching
+# [X] | Session-aware? Should add session_id
+# [ ] | Debug-only heavy features?: None
+# Top 3 perf risks:
+# 1. [PERF_HOT] log_frame() creates large dict + CARLA queries every tick
+# 2. [PERF_HOT] No buffering - list.append() every frame, DataFrame conversion on demand
+# 3. [PERF_SPLIT] Duplicate with Core/Simulation/DataIngestion.py - consolidate?
+# ============================================================================
+
 import pandas as pd
 import os
 import time
