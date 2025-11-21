@@ -815,14 +815,14 @@ class MultiScaleWindows:
 
         frames = list(buffer)
 
-        # Speed statistics
-        speeds = [f.get('speed_kmh', 0) for f in frames]
+        # Speed statistics (null-safe)
+        speeds = [(f.get('speed_kmh') or 0) for f in frames]
         avg_speed = np.mean(speeds) if speeds else 0
         max_speed = np.max(speeds) if speeds else 0
         min_speed = np.min(speeds) if speeds else 0
 
-        # MVD scores
-        mvd_scores = [f.get('mvd_overall_score', 100) for f in frames]
+        # MVD scores (null-safe)
+        mvd_scores = [(f.get('mvd_overall_score') or 100) for f in frames]
         avg_mvd = np.mean(mvd_scores) if mvd_scores else 100
         min_mvd = np.min(mvd_scores) if mvd_scores else 100
 
@@ -835,34 +835,34 @@ class MultiScaleWindows:
 
         lane_violations = sum(1 for f in frames if f.get('lane_invasion_active', False))
         collisions = sum(1 for f in frames if f.get('collision_occurred', False))
-        near_misses = sum(1 for f in frames if f.get('ttc_s', 99) < 2.0)
+        near_misses = sum(1 for f in frames if (f.get('ttc_s') or 99) < 2.0)
 
-        # Predictive indices (worst case in window)
-        ttcs = [f.get('ttc_s', 99) for f in frames]
-        tlcs = [f.get('tlc_s', 99) for f in frames]
+        # Predictive indices (worst case in window) (null-safe)
+        ttcs = [(f.get('ttc_s') or 99) for f in frames]
+        tlcs = [(f.get('tlc_s') or 99) for f in frames]
         min_ttc = np.min(ttcs) if ttcs else 99
         min_tlc = np.min(tlcs) if tlcs else 99
 
-        # Dynamics
-        jerks = [f.get('jerk_magnitude', 0) for f in frames]
-        g_lats = [abs(f.get('g_force_lateral', 0)) for f in frames]
-        g_longs = [abs(f.get('g_force_longitudinal', 0)) for f in frames]
+        # Dynamics (null-safe)
+        jerks = [(f.get('jerk_magnitude') or 0) for f in frames]
+        g_lats = [abs((f.get('g_force_lateral') or 0)) for f in frames]
+        g_longs = [abs((f.get('g_force_longitudinal') or 0)) for f in frames]
 
         max_jerk = np.max(jerks) if jerks else 0
         max_g_lat = np.max(g_lats) if g_lats else 0
         max_g_long = np.max(g_longs) if g_longs else 0
 
-        # Control inputs
-        throttles = [f.get('control_throttle', 0) for f in frames]
-        brakes = [f.get('control_brake', 0) for f in frames]
-        steers = [f.get('control_steer', 0) for f in frames]
+        # Control inputs (null-safe)
+        throttles = [(f.get('control_throttle') or 0) for f in frames]
+        brakes = [(f.get('control_brake') or 0) for f in frames]
+        steers = [(f.get('control_steer') or 0) for f in frames]
 
         avg_throttle = np.mean(throttles) if throttles else 0
         avg_brake = np.mean(brakes) if brakes else 0
         avg_steer = np.mean(steers) if steers else 0
 
-        # Environmental
-        traffic_density = int(np.mean([f.get('nearby_vehicles_count', 0) for f in frames]))
+        # Environmental (null-safe)
+        traffic_density = int(np.mean([(f.get('nearby_vehicles_count') or 0) for f in frames]))
 
         # Get weather from most recent frame
         weather = frames[-1].get('weather_condition', 'clear') if frames else 'clear'
