@@ -559,8 +559,10 @@ class World(object):
         except Exception as e:
             logging.warning(f"[cleanup] HUD destroy warning: {e}")
 
-        # Collision cage probes
+        # Collision cage probes - detach callbacks before destroying to prevent stream ID errors
         for probe in list(self.collision_probes):
+            try: probe.listen(None)  # Detach callback first
+            except Exception: pass
             try: probe.stop()
             except Exception: pass
             try: probe.destroy()
@@ -626,6 +628,15 @@ class World(object):
             try: self.player.destroy()
             except Exception: pass
             self.player = None
+
+        # Flush CARLA callbacks to prevent "stream ID not found" errors on restart
+        try:
+            import time as _time
+            for _ in range(3):
+                self.world.tick()
+                _time.sleep(0.05)
+        except Exception as e:
+            logging.debug(f"[cleanup] World tick during cleanup: {e}")
 
     def restart(self):
         """

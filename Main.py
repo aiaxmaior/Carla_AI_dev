@@ -410,6 +410,28 @@ def game_loop(args, client, monitors, joystick_mappings=None):
 
             # Handle reset state
             if world_obj.is_reset:
+                # Save current session data before restarting
+                if 'data_ingestor' in dir() and data_ingestor is not None:
+                    try:
+                        logging.info("Saving session data before restart...")
+                        data_ingestor.save_session()
+                    except Exception as e:
+                        logging.error(f"Failed to save session before restart: {e}")
+
+                    # Create new session for fresh restart
+                    try:
+                        import time as _time_module
+                        session_id = f"session_{_time_module.strftime('%Y%m%d_%H%M%S')}"
+                        data_ingestor = MLDataLogger(
+                            session_id=session_id,
+                            export_csv=True,
+                            export_parquet=True,
+                            mmap_enabled=False
+                        )
+                        logging.info(f"Created new session: {session_id}")
+                    except Exception as e:
+                        logging.error(f"Failed to create new session: {e}")
+
                 if world_obj.should_reset_scores:
                     mvd_feature_extractor.reset_scores()
                     hud.reset()
