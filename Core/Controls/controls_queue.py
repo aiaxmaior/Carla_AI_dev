@@ -77,7 +77,8 @@ class DualControl(object):
     from control logic execution using a command queue.
     """
 
-    def __init__(self, world_instance, args, existing_mappings=None, map_keys=None, display_height=None):
+    def __init__(self, display,world_instance, args, existing_mappings=None, map_keys=None, display_height=None):
+        self._display = display
         self.world = world_instance
         self.args = args
         self._autopilot_enabled = self.args.autopilot
@@ -239,7 +240,7 @@ class DualControl(object):
         elif self._joysticks_present:
             logging.info(f'DynamicMapping instatiation: {self._map_keys}')
             mapper = DynamicMapping(
-                self.world, self._joysticks, self._joystick_capabilities, self._map_keys, self._h
+                args, display, self.world, self._joysticks, self._joystick_capabilities, self._map_keys, self._h
             )
             self.mapped_controls = mapper.run_configuration()
             if self.mapped_controls:
@@ -484,6 +485,10 @@ class DualControl(object):
             "DOWN": (
                 "_down_joy_idx",
                 "_down_button_idx"
+            ),
+            "PARK": (
+                "_park_joy_idx",
+                "_park_button_idx"
             ),
         }
         for action_id in button_actions:

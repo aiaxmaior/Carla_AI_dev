@@ -373,7 +373,7 @@ def game_loop(args, client, monitors, joystick_mappings=None):
 
         # Instantiate controller
         controller = DualControl(
-            world_obj, args, joystick_mappings, persistent_keys, total_height
+            display, world_obj, args, joystick_mappings, persistent_keys, total_height
         )
 
         # After HUD is fully ready
@@ -392,7 +392,6 @@ def game_loop(args, client, monitors, joystick_mappings=None):
             logging.info("✅⏱️ Stabilization complete.")
 
         # Initialize ML-ready data logger with PyArrow backend
-        import time
         session_id = f"session_{time.strftime('%Y%m%d_%H%M%S')}"
         data_ingestor = MLDataLogger(
             session_id=session_id,
@@ -417,7 +416,7 @@ def game_loop(args, client, monitors, joystick_mappings=None):
                     world_obj.should_reset_scores = False
                 world_obj.restart()
                 controller = DualControl(
-                    world_obj, args, joystick_mappings, persistent_keys, total_height
+                    display, world_obj, args, joystick_mappings, persistent_keys, total_height
                 )
                 logging.info(
                     "BLINKER map snapshot: %s",
@@ -574,7 +573,7 @@ def main():
         help="TCP port to listen to",
     )
     argparser.add_argument(
-        "-a", "--autopilot", action="store_true", help="enable autopilot"
+        "-a", "--autopilot", default=False, action="store_true", help="enable autopilot"
     )
     argparser.add_argument(
         "--res",

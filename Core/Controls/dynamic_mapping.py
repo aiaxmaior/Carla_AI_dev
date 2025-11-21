@@ -38,8 +38,10 @@ class DynamicMapping:
     Handles the dynamic configuration and mapping of joystick controls.
     """
 
-    def __init__(self, world, joysticks, joystick_capabilities, map_keys = None, display_height = 1080):
+    def __init__(self, args, display, world, joysticks, joystick_capabilities, map_keys = None, display_height = 1080):
         
+        self._args = args
+        self._display = display
         self._H=display_height
         self.world = world
         self._joysticks = joysticks
@@ -54,6 +56,7 @@ class DynamicMapping:
         font="tt-supermolot-neue-trl.bd-it", type="mapping_screen", scale=scale_factor
     )
         self.primary_font = panel_fonts['sub']
+        pygame.display.get_surface()
         
 
     # NEW
@@ -211,6 +214,7 @@ class DynamicMapping:
 
     def _display_mapping_message(
         self,
+        args,
         surface,
         font_object,
         primary_message,
@@ -222,14 +226,15 @@ class DynamicMapping:
         """Helper to display messages during dynamic mapping."""
         # --- Gradient Background ---
         # This will correctly cover the entire double-wide window
+        self._args = args
         top_color = (44, 62, 80)  # Dark Slate Blue
         bottom_color = (27, 38, 49)  # Very Dark Blue/Charcoal
-        screen_height = surface.get_height()
+        screen_height = self._display.get_height()
         for y in range(screen_height):
             r = top_color[0] + (bottom_color[0] - top_color[0]) * y // screen_height
             g = top_color[1] + (bottom_color[1] - top_color[1]) * y // screen_height
             b = top_color[2] + (bottom_color[2] - top_color[2]) * y // screen_height
-            pygame.draw.line(surface, (r, g, b), (0, y), (surface.get_width(), y))
+            pygame.draw.line(surface, (r, g, b), (0, y), (self._display.get_width(), y))
 
         # --- Font Setup (no changes needed here) ---
         if not hasattr(font_object, "render"):
@@ -248,9 +253,34 @@ class DynamicMapping:
         sub_font = panel_fonts['sub']
         detected_font = panel_fonts['detected']
         # --- Corrected Positioning for Multi-Monitor ---
-        main_screen_offset_x = surface.get_width() // 4
-        single_screen_width = surface.get_width() // 4
-        center_x = main_screen_offset_x + (single_screen_width / 2)
+        center_x = self._display.get_width() // 2
+
+
+        sizes = [(self._display.get_width(), screen_height)]
+        self._num_panels = max(
+            1, sizes[0][0] / self._args.width
+        )  # estimate from window width
+        # assume all panels same height; take width from first (good enough for uniform setup)
+        total_w, self._panel_h = sizes[0][0], sizes[0][1]
+        self._panel_w = total_w // self._num_panels
+
+        def _scale_cover(img, dst_w, dst_h):
+            iw, ih = img.get_size()
+            sx, sy = dst_w / iw, dst_h / ih
+            scale = max(sx, sy)  # cover (crop as needed), preserves aspect
+            sw, sh = int(iw * scale), int(ih * scale)
+            scaled = pygame.transform.smoothscale(img, (sw, sh))
+            # center inside the dst panel
+            surf = pygame.Surface((dst_w, dst_h)).convert()
+            surf.blit(scaled, ((dst_w - sw) // 2, (dst_h - sh) // 2))
+            return surf
+
+        try:
+            base = pygame.image.load("./images/logo_duhd.png").convert_alpha()
+            self._splash_img = _scale_cover(base, self._panel_w, self._panel_h)
+        except pygame.error as e:
+            logging.warning(f"Could not load splash image: {e}")
+            self._splash_img = None
 
         # --- Render and Blit all text elements, centered on the main screen ---
         title_surf = title_font.render("CONTROLLER CONFIGURATION", True, (169, 204, 227))

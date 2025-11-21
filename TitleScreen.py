@@ -584,7 +584,7 @@ class TitleScreen(object):
                 "dis",
                 2,
             )
-            base = pygame.image.load("./images/welcomescreen_bus.png").convert_alpha()
+            base = pygame.image.load("./images/logo_duhd.png").convert_alpha()
             self._splash_img = _scale_cover(base, self._panel_w, self._panel_h)
         except pygame.error as e:
             logging.warning(f"Could not load splash image: {e}")

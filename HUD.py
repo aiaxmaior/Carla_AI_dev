@@ -849,7 +849,7 @@ class HUD(object):
 
         # Draw outer circle background
         pygame.draw.circle(display, bg_color, (int(center_x), int(center_y)), radius)
-        pygame.draw.circle(display, (80, 80, 80), (int(center_x), int(center_y)), radius, 2)
+        pygame.draw.circle(display, (80, 80, 80), (int(center_x), int(center_y)), radius, 10)
 
         # Draw tick marks and numbers
         tick_value = 0
