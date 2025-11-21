@@ -399,11 +399,13 @@ def consolidated_select_screen(
             _display.blit(_overlay, (panel_x0, 0))
         else:
             _display.fill((24, 28, 34))
-        # Static Logo
+        # Static panoramic background (logo_duhd.png spans full width at 1080p)
         if _logo_img:
-            _display.blit(
-                _logo_img, _logo_img.get_rect(center=(center_x, _panel_h * 0.15))
-            )
+            # Position background to span full display width, centered vertically at top
+            logo_rect = _logo_img.get_rect()
+            logo_rect.centerx = center_x
+            logo_rect.top = 0
+            _display.blit(_logo_img, logo_rect)
         #            _overlay.fill((0, 0, 0, 70))  # 70–110 alpha looks nice
 
         # title centered on full window, positioned above dropdowns
@@ -592,11 +594,13 @@ class TitleScreen(object):
             logo_surface = pygame.image.load(
                 "./images/logo_duhd.png"
             ).convert_alpha()
-            # Logo is 3840x1080 (ultrawide) - scale to fit display width
+            # logo_duhd.png is 7680x1080 - full panoramic background for unified display at 1080p
+            # Scale to match actual display dimensions
             w, h = logo_surface.get_size()
-            # Scale to fit 80% of display width while maintaining aspect ratio
-            target_w = int(self._W * 0.8)
-            scale = target_w / w
+            scale_x = self._W / w
+            scale_y = self._H / h
+            # Use uniform scaling to maintain aspect ratio, fitting to display
+            scale = min(scale_x, scale_y)
             self._logo_img = pygame.transform.smoothscale(
                 logo_surface, (int(w * scale), int(h * scale))
             )
@@ -964,11 +968,13 @@ class TitleScreen(object):
                 self._display.blit(self._overlay, (self._panel_x0, 0))
             else:
                 self._display.fill((24, 28, 34))
-            # Static Logo
+            # Static panoramic background (logo_duhd.png spans full width at 1080p)
             if self._logo_img:
-                self._display.blit(
-                    self._logo_img, self._logo_img.get_rect(center=(center_x, H * 0.15))
-                )
+                # Position background to span full display width, centered vertically at top
+                logo_rect = self._logo_img.get_rect()
+                logo_rect.centerx = center_x
+                logo_rect.top = 0
+                self._display.blit(self._logo_img, logo_rect)
             #            self._overlay.fill((0, 0, 0, 70))  # 70–110 alpha looks nice
 
             title_rect = title_surf.get_rect(center=(center_x, H * 0.33))
